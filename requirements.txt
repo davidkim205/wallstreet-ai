@@ -1,0 +1,11 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+yfinance
+requests
+tqdm
+jupyter
+openai
+fastapi
+uvicorn
