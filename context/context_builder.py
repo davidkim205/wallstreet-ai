@@ -149,7 +149,7 @@ def build_web_search_section(ws_results):
     return "\n".join(lines)
 
 
-def build_context(market_data, intent):
+def build_context(market_data, intent, news_str=None):
     sections = []
     fd = market_data.fundamentals
     pd = market_data.price_data
@@ -172,6 +172,8 @@ def build_context(market_data, intent):
     if market_data.news_snippets:
         news_text = "\n".join(f"  • {n}" for n in market_data.news_snippets[:6])
         sections.append(f"[최근 뉴스 헤드라인 (yfinance)]\n{news_text}")
+    if news_str:
+        sections.append(f"[구글 뉴스 요약]\n{news_str}")
     if ws:
         sections.append(build_web_search_section(ws))
 

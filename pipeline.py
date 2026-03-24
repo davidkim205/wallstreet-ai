@@ -8,7 +8,7 @@ from openai import OpenAI
 
 
 from intent.intent_parser import parse_intent
-from llm.generator import generate_analysis
+from llm.generator import generate_analysis, generate_news_info
 
 from data.collect_data import collect_data
 
@@ -40,14 +40,18 @@ def pipeline(query):
     print(f"Wallstreet-AI 분석 시작: {query}")
     print('='*60)
 
+    # 1. intent 파싱, 2. tool 라우팅, 3. 데이터 수집
     intent      = parse_intent(client, query)
     tools       = route_tools(intent)
     market_data = collect_data(client, intent, tools)
 
-    context = build_context(market_data, intent)
+    # 4. 구글 뉴스 정보 생성 및 컨텍스트에 포함
+    news_str = generate_news_info(client, query, intent)
+    context = build_context(market_data, intent, news_str=news_str)
     print(f"[④] 컨텍스트 빌드 완료 ({len(context)} 문자)")
 
-    response = generate_analysis(client, query, context, intent)
+    # 5. 분석 생성 (news_str는 이미 context에 포함되었으므로 전달하지 않음)
+    response = generate_analysis(client, query, context, intent, news_str=None)
 
     result = AnalysisResult(
         query=query,
@@ -60,11 +64,14 @@ def pipeline(query):
             "news_count":        len(market_data.news_snippets),
             "earnings":          market_data.earnings_data,
             "web_search_blocks": len(market_data.web_search_results),
+            "google_news":       news_str,  
         },
         llm_response=response
     )
 
     print("\n[완료] 분석 완료 ✓")
+    print('\ncontext info')
+    print(context)
     return result
 
 
@@ -90,6 +97,7 @@ def print_result(result):
     print(f"  분기 실적 수:        {len(ctx.get('earnings', {}).get('quarterly_results', []))}")
     print(f"  연간 실적 수:        {len(ctx.get('earnings', {}).get('annual_results', []))}")
     print(f"  웹 검색 블록 수:     {ctx.get('web_search_blocks', 0)}")
+    print(f"  구글 뉴스 요약 포함:   {'예' if ctx.get('google_news') else '아니오'}")
 
 def main():
     while True:
