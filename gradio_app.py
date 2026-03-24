@@ -245,7 +245,7 @@ def create_app(default_endpoint: str) -> gr.Blocks:
 
 def main():
     parser = argparse.ArgumentParser(description="Wallstreet-AI Gradio UI")
-    parser.add_argument("--api-url",type=str,default="http://0.0.0.0:8000/analyze",help="FastAPI SSE 엔드포인트 URL",)
+    parser.add_argument("--api-url",type=str,default="http://0.0.0.0:8000/analyze/stream",help="FastAPI SSE 엔드포인트 URL",)
     parser.add_argument("--share",action="store_true")
     parser.add_argument("--server-name",type=str, default="0.0.0.0")
     parser.add_argument("--port",type=int, default=7860)
