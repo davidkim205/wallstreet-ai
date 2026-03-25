@@ -12,7 +12,7 @@ import gradio as gr
 import requests
 
 
-PERSONA_FILE = Path("persona.jsonl")
+PERSONA_FILE = Path(os.environ.get("PERSONA_FILE", "persona.jsonl"))
 
 EXAMPLE_QUERIES = [
     "AAPL의 최근 실적과 투자 포인트 요약해줘",

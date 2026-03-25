@@ -1,8 +1,9 @@
 import json
+import os
 from pathlib import Path
 from llm.generator import Persona
 
-PERSONA_FILE = Path("persona.jsonl")
+PERSONA_FILE = Path(os.environ.get("PERSONA_FILE", "persona.jsonl"))
 
 def load_personas():
     personas = []
