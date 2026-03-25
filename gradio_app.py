@@ -1,14 +1,18 @@
 import argparse
 import html as html_lib
 import json
+import os
 import time
+from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
-from typing import Generator, Tuple
+from typing import Generator, List, Tuple
 
 import gradio as gr
 import requests
 
+
+PERSONA_FILE = Path(os.environ.get("PERSONA_FILE", "persona.jsonl"))
 
 EXAMPLE_QUERIES = [
     "AAPL의 최근 실적과 투자 포인트 요약해줘",
@@ -66,11 +70,96 @@ def timer_text(elapsed: str) -> str:
     return f"⏱ {elapsed}"
 
 
+def load_persona_choices() -> List[str]:
+    # persona.jsonl에서 persona 이름 목록 로드
+    choices = ["없음"]
+    if PERSONA_FILE.exists():
+        with PERSONA_FILE.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    data = json.loads(line)
+                    name = data.get("name", "")
+                    if name and name not in choices:
+                        choices.append(name)
+                except json.JSONDecodeError:
+                    continue
+    return choices
+
+
+def make_persona_gradio(info: str, endpoint: str):
+    # API 서버 /persona/ 를 호출하여 persona 생성 (generator: 타이머 + 진행 메시지 표시)
+    if not info or not info.strip():
+        yield "인물 정보를 입력해주세요.", "{}", timer_text("0.0초")
+        return
+
+    persona_endpoint = endpoint.rstrip("/").rsplit("/", 1)[0] + "/persona/"
+    start_time = time.time()
+    result_queue: Queue = Queue()
+
+    def elapsed_str() -> str:
+        return f"{time.time() - start_time:.1f}초"
+
+    def worker() -> None:
+        try:
+            resp = requests.post(
+                persona_endpoint,
+                json={"info": info.strip()},
+                timeout=(10, 300),
+            )
+            resp.raise_for_status()
+            result_queue.put(("ok", resp.json()))
+        except requests.exceptions.ConnectionError:
+            result_queue.put(("error", f"연결 실패: {persona_endpoint} 확인"))
+        except requests.exceptions.Timeout:
+            result_queue.put(("error", "요청 시간 초과"))
+        except requests.RequestException as exc:
+            result_queue.put(("error", f"요청 실패: {exc}"))
+
+    Thread(target=worker, daemon=True).start()
+
+    # 완료될 때까지 진행 메시지 + 타이머 갱신
+    while True:
+        try:
+            kind, payload = result_queue.get_nowait()
+            break
+        except Empty:
+            yield loading_markdown("페르소나 생성 중... (AI가 인물 정보를 검색하고 있습니다)"), "{}", timer_text(elapsed_str())
+            time.sleep(0.3)
+
+    if kind == "error":
+        yield payload, "{}", timer_text(elapsed_str())
+        return
+
+    data = payload
+
+    result_md = f"""**이름**: {data.get('name', '')}
+
+**배경**: {data.get('background', '')}
+
+**금융 사고 방식**: {data.get('financial_mindset', '')}
+
+**데이터 분석 방식**: {data.get('data_analysis_approach', '')}
+
+**답변 스타일**: {data.get('response_style', '')}
+
+**핵심 원칙**: {', '.join(data.get('key_principles', []))}
+"""
+    quotes = data.get("famous_quotes") or []
+    if quotes:
+        result_md += f"\n**어록**: {' / '.join(quotes)}"
+
+    yield result_md, json.dumps(data, ensure_ascii=False, indent=2), timer_text(elapsed_str())
+
+
 def stream_analyze(
-    query: str, endpoint: str
+    query: str, persona_name: str, endpoint: str
 ) -> Generator[Tuple[str, str, str], None, None]:
     query = (query or "").strip()
     endpoint = (endpoint or "").strip()
+    persona_name = (persona_name or "").strip()
 
     if not query:
         yield loading_markdown("질문을 입력해주세요."), timer_text("0.0초"), ""
@@ -94,9 +183,13 @@ def stream_analyze(
 
     def reader_worker() -> None:
         try:
+            payload = {"query": query}
+            if persona_name and persona_name != "없음":
+                payload["persona_name"] = persona_name
+
             with requests.post(
                 endpoint,
-                json={"query": query},
+                json=payload,
                 headers={"Accept": "text/event-stream"},
                 stream=True,
                 timeout=(10, 300),
@@ -113,11 +206,11 @@ def stream_analyze(
 
                     payload_text = line[5:].strip()
                     try:
-                        payload = json.loads(payload_text)
+                        parsed = json.loads(payload_text)
                     except json.JSONDecodeError:
                         continue
 
-                    event_queue.put(("event", payload))
+                    event_queue.put(("event", parsed))
         except requests.exceptions.ConnectionError:
             event_queue.put(("exception", f"연결 실패: {endpoint} 확인"))
         except requests.exceptions.Timeout:
@@ -192,7 +285,6 @@ def stream_analyze(
         if worker_finished and terminal_event:
             break
         if worker_finished and not terminal_event:
-            # 서버가 done 이벤트 없이 종료된 경우 마지막 화면 갱신 후 종료
             if not first_delta_received:
                 loading_msg = "연결 종료"
                 yield loading_markdown(loading_msg), timer_text(elapsed_str()), meta_text
@@ -420,6 +512,17 @@ def create_app(default_endpoint: str) -> gr.Blocks:
         max-height: 300px;
         overflow-y: auto;
     }
+
+    #persona-result-wrapper {
+        min-height: 200px;
+        max-height: 50vh;
+        overflow-y: auto !important;
+        border: 1px solid var(--ws-border) !important;
+        border-radius: 14px !important;
+        background: var(--ws-surface) !important;
+        padding: 16px 20px !important;
+        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06) !important;
+    }
     """
 
     theme = gr.themes.Soft(
@@ -433,49 +536,105 @@ def create_app(default_endpoint: str) -> gr.Blocks:
         gr.Markdown("## 📈 Wallstreet-AI")
         gr.Markdown("A finance AI that combines earnings, news, and market trends in one place.")
 
-        with gr.Row():
-            with gr.Column(scale=3):
-                endpoint = gr.Textbox(
-                    label="SSE Endpoint",
-                    value=default_endpoint,
-                )
-                query = gr.Textbox(
-                    label="질문",
-                    lines=3,
-                    value=EXAMPLE_QUERIES[0],
-                )
+        with gr.Tabs():
+            # ── Tab 1: 질문하기 ──────────────────────────────────────
+            with gr.Tab("💬 질문하기"):
                 with gr.Row():
-                    run_btn = gr.Button("🔍 질문하기", variant="primary", scale=3)
-                    clear_btn = gr.Button("🗑 초기화", scale=1)
+                    with gr.Column(scale=3):
+                        endpoint = gr.Textbox(
+                            label="SSE Endpoint",
+                            value=default_endpoint,
+                        )
+                        persona_dropdown = gr.Dropdown(
+                            label="페르소나 선택",
+                            choices=load_persona_choices(),
+                            value="없음",
+                            interactive=True,
+                        )
+                        refresh_btn = gr.Button("🔄 페르소나 목록 새로고침", size="sm")
+                        query = gr.Textbox(
+                            label="질문",
+                            lines=3,
+                            value=EXAMPLE_QUERIES[0],
+                        )
+                        with gr.Row():
+                            run_btn = gr.Button("🔍 질문하기", variant="primary", scale=3)
+                            clear_btn = gr.Button("🗑 초기화", scale=1)
 
-            with gr.Column(scale=1):
-                gr.Markdown("**Example Questions**")
-                for ex in EXAMPLE_QUERIES:
-                    gr.Button(ex, size="sm").click(
-                        fn=lambda x=ex: x, outputs=query
-                    )
+                    with gr.Column(scale=1):
+                        gr.Markdown("**Example Questions**")
+                        for ex in EXAMPLE_QUERIES:
+                            gr.Button(ex, size="sm").click(
+                                fn=lambda x=ex: x, outputs=query
+                            )
 
-        answer = gr.Markdown(value=to_markdown(""), label="답변", elem_id="answer-wrapper")
-        timer = gr.Markdown(value=timer_text("0.0초"), elem_id="timer-row")
+                answer = gr.Markdown(value=to_markdown(""), label="답변", elem_id="answer-wrapper")
+                timer = gr.Markdown(value=timer_text("0.0초"), elem_id="timer-row")
+                meta = gr.Code(label="최종 결과 (JSON)", language="json", elem_id="meta-box")
 
-        meta = gr.Code(label="최종 결과 (JSON)", language="json", elem_id="meta-box")
+                gr.HTML(AUTO_SCROLL_SCRIPT, visible=False)
 
-        gr.HTML(AUTO_SCROLL_SCRIPT, visible=False)
+                run_btn.click(
+                    fn=stream_analyze,
+                    inputs=[query, persona_dropdown, endpoint],
+                    outputs=[answer, timer, meta],
+                )
+                query.submit(
+                    fn=stream_analyze,
+                    inputs=[query, persona_dropdown, endpoint],
+                    outputs=[answer, timer, meta],
+                )
+                clear_btn.click(
+                    fn=lambda: (to_markdown(""), timer_text("0.0초"), ""),
+                    outputs=[answer, timer, meta],
+                )
+                refresh_btn.click(
+                    fn=lambda: gr.Dropdown(choices=load_persona_choices(), value="없음"),
+                    outputs=[persona_dropdown],
+                )
 
-        run_btn.click(
-            fn=stream_analyze,
-            inputs=[query, endpoint],
-            outputs=[answer, timer, meta],
-        )
-        query.submit(
-            fn=stream_analyze,
-            inputs=[query, endpoint],
-            outputs=[answer, timer, meta],
-        )
-        clear_btn.click(
-            fn=lambda: (to_markdown(""), timer_text("0.0초"), ""),
-            outputs=[answer, timer, meta],
-        )
+            # ── Tab 2: 페르소나 만들기 ────────────────────────────────
+            with gr.Tab("🧑‍💼 페르소나 만들기"):
+                gr.Markdown("### 새 페르소나 생성")
+                gr.Markdown(
+                    "금융 인물의 이름이나 설명을 입력하면 AI가 해당 인물의 금융 사고방식, "
+                    "분석 스타일, 답변 스타일을 자동으로 생성합니다. "
+                )
+
+                with gr.Row():
+                    with gr.Column(scale=2):
+                        persona_info_input = gr.Textbox(
+                            label="인물 정보",
+                            placeholder="예: 워렌 버핏, JP모건, 가타야마 아키라  ...",
+                            lines=3,
+                        )
+                        persona_gen_btn = gr.Button("✨ 페르소나 생성", variant="primary")
+
+                    with gr.Column(scale=1):
+                        gr.Markdown("**예시 인물**")
+                        example_personas = ["워렌 버핏", "JP모건", "가타야마 아키라"]
+                        for ep in example_personas:
+                            gr.Button(ep, size="sm").click(
+                                fn=lambda x=ep: x, outputs=persona_info_input
+                            )
+
+                persona_result_md = gr.Markdown(
+                    value="",
+                    label="생성 결과",
+                    elem_id="persona-result-wrapper",
+                )
+                persona_timer = gr.Markdown(value=timer_text("0.0초"), elem_id="timer-row")
+                persona_result_json = gr.Code(
+                    label="페르소나 JSON",
+                    language="json",
+                    elem_id="meta-box",
+                )
+
+                persona_gen_btn.click(
+                    fn=make_persona_gradio,
+                    inputs=[persona_info_input, endpoint],
+                    outputs=[persona_result_md, persona_result_json, persona_timer],
+                )
 
     return demo
 
