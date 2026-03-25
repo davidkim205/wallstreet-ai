@@ -71,7 +71,7 @@ def timer_text(elapsed: str) -> str:
 
 
 def load_persona_choices() -> List[str]:
-    """persona.jsonl에서 persona 이름 목록 로드"""
+    # persona.jsonl에서 persona 이름 목록 로드
     choices = ["없음"]
     if PERSONA_FILE.exists():
         with PERSONA_FILE.open("r", encoding="utf-8") as f:
@@ -90,43 +90,50 @@ def load_persona_choices() -> List[str]:
 
 
 def make_persona_gradio(info: str, endpoint: str):
-    # API 서버 /persona/ 를 호출하여 persona 생성
+    # API 서버 /persona/ 를 호출하여 persona 생성 (generator: 타이머 + 진행 메시지 표시)
     if not info or not info.strip():
-        return "인물 정보를 입력해주세요.", "{}"
+        yield "인물 정보를 입력해주세요.", "{}", timer_text("0.0초")
+        return
 
     persona_endpoint = endpoint.rstrip("/").rsplit("/", 1)[0] + "/persona/"
+    start_time = time.time()
+    result_queue: Queue = Queue()
 
-    try:
-        resp = requests.post(
-            persona_endpoint,
-            json={"info": info.strip()},
-            timeout=(10, 300),
-        )
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.exceptions.ConnectionError:
-        return f"연결 실패: {persona_endpoint} 확인", "{}"
-    except requests.exceptions.Timeout:
-        return "요청 시간 초과", "{}"
-    except requests.RequestException as exc:
-        return f"요청 실패: {exc}", "{}"
+    def elapsed_str() -> str:
+        return f"{time.time() - start_time:.1f}초"
 
-    # persona.jsonl에 저장 (중복 이름 제외)
-    existing_names = []
-    if PERSONA_FILE.exists():
-        with PERSONA_FILE.open("r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    existing_names.append(json.loads(line).get("name", ""))
-                except json.JSONDecodeError:
-                    pass
+    def worker() -> None:
+        try:
+            resp = requests.post(
+                persona_endpoint,
+                json={"info": info.strip()},
+                timeout=(10, 300),
+            )
+            resp.raise_for_status()
+            result_queue.put(("ok", resp.json()))
+        except requests.exceptions.ConnectionError:
+            result_queue.put(("error", f"연결 실패: {persona_endpoint} 확인"))
+        except requests.exceptions.Timeout:
+            result_queue.put(("error", "요청 시간 초과"))
+        except requests.RequestException as exc:
+            result_queue.put(("error", f"요청 실패: {exc}"))
 
-    if data.get("name") and data["name"] not in existing_names:
-        with PERSONA_FILE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(data, ensure_ascii=False) + "\n")
+    Thread(target=worker, daemon=True).start()
+
+    # 완료될 때까지 진행 메시지 + 타이머 갱신
+    while True:
+        try:
+            kind, payload = result_queue.get_nowait()
+            break
+        except Empty:
+            yield loading_markdown("페르소나 생성 중... (AI가 인물 정보를 검색하고 있습니다)"), "{}", timer_text(elapsed_str())
+            time.sleep(0.3)
+
+    if kind == "error":
+        yield payload, "{}", timer_text(elapsed_str())
+        return
+
+    data = payload
 
     result_md = f"""**이름**: {data.get('name', '')}
 
@@ -144,7 +151,7 @@ def make_persona_gradio(info: str, endpoint: str):
     if quotes:
         result_md += f"\n**어록**: {' / '.join(quotes)}"
 
-    return result_md, json.dumps(data, ensure_ascii=False, indent=2)
+    yield result_md, json.dumps(data, ensure_ascii=False, indent=2), timer_text(elapsed_str())
 
 
 def stream_analyze(
@@ -616,6 +623,7 @@ def create_app(default_endpoint: str) -> gr.Blocks:
                     label="생성 결과",
                     elem_id="persona-result-wrapper",
                 )
+                persona_timer = gr.Markdown(value=timer_text("0.0초"), elem_id="timer-row")
                 persona_result_json = gr.Code(
                     label="페르소나 JSON",
                     language="json",
@@ -625,7 +633,7 @@ def create_app(default_endpoint: str) -> gr.Blocks:
                 persona_gen_btn.click(
                     fn=make_persona_gradio,
                     inputs=[persona_info_input, endpoint],
-                    outputs=[persona_result_md, persona_result_json],
+                    outputs=[persona_result_md, persona_result_json, persona_timer],
                 )
 
     return demo

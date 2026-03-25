@@ -37,9 +37,24 @@ def print_timings(timings):
 
 
 def save_persona_jsonl(persona, query, file_name=None):
-    file_name = file_name or os.environ.get("PERSONA_LOG_FILE", "persona_log.jsonl")
+    file_name = file_name or os.environ.get("PERSONA_FILE", "persona.jsonl")
 
     data = persona.model_dump() if hasattr(persona, "model_dump") else dict(persona)
+
+    # 중복 이름 체크
+    name = data.get("name", "")
+    if name and os.path.exists(file_name):
+        with open(file_name, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    if json.loads(line).get("name") == name:
+                        return
+                except json.JSONDecodeError:
+                    pass
+
     record = {
         "saved_at": datetime.now().isoformat(timespec="seconds"),
         "query": query,
