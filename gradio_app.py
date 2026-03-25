@@ -103,11 +103,15 @@ def stream_analyze(
             ) as response:
                 response.raise_for_status()
 
-                for raw_line in response.iter_lines(decode_unicode=True):
-                    if not raw_line or not raw_line.startswith("data: "):
+                for raw_line in response.iter_lines(chunk_size=1, decode_unicode=True):
+                    if not raw_line:
                         continue
 
-                    payload_text = raw_line[6:]
+                    line = raw_line.strip()
+                    if not line.startswith("data:"):
+                        continue
+
+                    payload_text = line[5:].strip()
                     try:
                         payload = json.loads(payload_text)
                     except json.JSONDecodeError:
@@ -152,7 +156,7 @@ def stream_analyze(
                         text_acc += delta
 
                 elif event_type == "result":
-                    result = payload.get("result", {})
+                    result = payload.get("result", payload)
                     meta_text = json.dumps(result, ensure_ascii=False, indent=2)
                     if not text_acc:
                         llm_response = result.get("llm_response", "")

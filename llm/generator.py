@@ -1,5 +1,6 @@
 import os
 import json
+from typing import Generator
 from .prompts import SYSTEM_PROMPTS
 from data.news import search_google_news, format_news_list
 from pydantic import BaseModel
@@ -145,3 +146,79 @@ def generate_persona(client, user_query):
                     return Persona.model_validate_json(content.text)
 
     return None
+
+
+def _event_get(event, key, default=None):
+    if isinstance(event, dict):
+        return event.get(key, default)
+    return getattr(event, key, default)
+
+
+def generate_analysis_stream(client, user_query, context, intent, news_str, persona=None):
+    """Responses API 스트림에서 텍스트 델타를 순차적으로 반환."""
+    analysis_type = intent.get("analysis_type", "general")
+    language = intent.get("language", "ko")
+    system_prompt = SYSTEM_PROMPTS.get(analysis_type, SYSTEM_PROMPTS["general"])
+    system_prompt += f"\n\n반드시 {language} 언어로 답변하세요. 투자 조언이 아닌 정보 제공임을 명시하세요."
+    
+    if persona:
+        system_prompt += f"""
+        
+[선택된 페르소나]
+이름: {persona.name}
+배경: {persona.background}
+금융 사고방식: {persona.financial_mindset}
+데이터 분석 방식: {persona.data_analysis_approach}
+답변 스타일: {persona.response_style}
+핵심 원칙: {", ".join(persona.key_principles)}
+"""
+        if persona.famous_quotes:
+            system_prompt += f"\n대표 어록: {' / '.join(persona.famous_quotes)}"
+
+    full_input = f"""{system_prompt}
+
+[수집된 시장 데이터]
+{context}
+
+[사용자 질의]
+{user_query}
+
+[최신 구글 뉴스]
+{news_str} """
+
+    llm_model_name = os.environ.get("LLM_MODEL_NAME")
+    print(f"[⑤] LLM 분석 스트리밍 생성 중 (Responses API, 모델: {llm_model_name})...")
+
+    chunks = []
+    final_text = ""
+
+    # SDK에 따라 stream API 형태가 다를 수 있어 create(stream=True) 기준으로 처리
+    stream = client.responses.create(
+        model=llm_model_name,
+        input=full_input,
+        stream=True,
+    )
+
+    for event in stream:
+        event_type = _event_get(event, "type", "")
+
+        if event_type == "response.output_text.delta":
+            delta = _event_get(event, "delta", "")
+            if delta:
+                chunks.append(delta)
+                yield delta
+            continue
+
+        # 일부 SDK/이벤트에서는 최종 response를 completed 이벤트에서 전달
+        if event_type == "response.completed":
+            response_obj = _event_get(event, "response", None)
+            if response_obj:
+                final_text = extract_response_text(response_obj) or ""
+
+    if not chunks:
+        # 델타 이벤트를 못 받은 경우 completed response 텍스트를 폴백으로 사용
+        final_text = final_text or "(분석 결과를 가져오지 못했습니다)"
+        yield final_text
+        return final_text
+
+    return "".join(chunks)
