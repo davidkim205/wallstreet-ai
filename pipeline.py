@@ -18,7 +18,8 @@ from data.collect_data import collect_data
 from context.context_builder import build_context
 from intent.intent_parser import route_tools
 from utils.data_types import AnalysisResult
-
+from persona.persona_loader import get_persona
+from persona.persona_loader import load_personas
 load_dotenv()
 
 
@@ -57,7 +58,7 @@ def save_result_jsonl(result):
     with open(file_name, "a", encoding="utf-8") as f:
         f.write(json.dumps(ordered_data, ensure_ascii=False) + "\n")
 
-def pipeline(query):
+def pipeline(query, persona_name=None):
     """
     파이프라인:
         ① 인텐트 파싱  (Chat Completions + Function Calling)
@@ -69,8 +70,13 @@ def pipeline(query):
     global client
     timings = {}
     start_total = time.time()
+
+    persona = get_persona(persona_name) if persona_name else None
+
     print(f"\n{'='*60}")
     print(f"Wallstreet-AI 분석 시작: {query}")
+    if persona:
+        print(f"[Persona] {persona.name}")
     print('='*60)
 
     with timed(timings, 'intent_parse'):
@@ -85,10 +91,11 @@ def pipeline(query):
     with timed(timings, 'context_build'):
         news_str = generate_news_info(client, query, intent)
         context = build_context(market_data, intent, news_str=news_str)
-    print(f"[④] 컨텍스트 빌드 완료 ({len(context)} 문자)")
 
     with timed(timings, 'analysis_generate'):
-        response = generate_analysis(client, query, context, intent, news_str=None)
+        response = generate_analysis(
+            client, query, context, intent, news_str=news_str, persona=persona
+        )
 
     timings['total'] = time.time() - start_total
 
@@ -137,14 +144,26 @@ def print_result(result):
         print(f"  {label:20s}: {val}")
     print(f"  {'구글 뉴스 요약 포함':20s}: {'예' if getattr(ctx, 'google_news', None) else '아니오'}")
 
+
 def main():
+    personas = load_personas()
+
+    print("\n사용 가능한 persona:")
+    for i, p in enumerate(personas, 1):
+        print(f"{i}. {p.name}")
+
+    persona_name = input("\npersona 이름 입력(없으면 Enter): ").strip()
+    if persona_name and not any(p.name == persona_name for p in personas):
+        print("해당 persona 없음. 기본 모드로 진행합니다.")
+        persona_name = None
+
     while True:
-        text = input("\n질문> ").strip()
+        text = input("\n질문 > ").strip()
         if text.lower() in ("exit", "quit", "종료"):
             break
         if not text:
             continue
-        result = pipeline(text)
+        result = pipeline(text, persona_name=persona_name)
         print_result(result)
 
 
