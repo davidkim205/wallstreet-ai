@@ -31,8 +31,7 @@ def route_tools(intent):
     return selected
 
 
-
-def parse_intent(client, user_query):
+async def parse_intent(client, user_query):
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
     INTENT_TOOL = {
         "type": "function",
@@ -54,7 +53,7 @@ def parse_intent(client, user_query):
             }
         }
     }
-    response = client.chat.completions.create(
+    response = await client.chat.completions.create(
         model=LLM_MODEL_NAME,
         messages=[
             {
