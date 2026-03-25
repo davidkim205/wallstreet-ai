@@ -1,6 +1,7 @@
 import json
 from queue import Empty, Queue
 from threading import Thread
+from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
@@ -8,12 +9,35 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from pipeline import pipeline as run_pipeline
+from persona.make_persona import make_persona
 
 app = FastAPI()
+
+
+class PersonaRequest(BaseModel):
+    info: str
+
+
+@app.post("/persona/")
+async def create_persona(request: PersonaRequest):
+    info = (request.info or "").strip()
+    if not info:
+        return JSONResponse(status_code=400, content={"error": "info 필드가 비어 있습니다."})
+
+    try:
+        persona = make_persona(info)
+    except Exception as exc:
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+    if persona is None:
+        return JSONResponse(status_code=500, content={"error": "페르소나 생성에 실패했습니다."})
+
+    return JSONResponse(content=persona.model_dump())
 
 class QueryRequest(BaseModel):
     query: str
     stream: bool = True
+    persona_name: Optional[str] = None
 
 
 def _sse(payload: dict) -> str:
@@ -25,9 +49,12 @@ async def analyze(request: QueryRequest):
     query = (request.query or "").strip()
     stream = request.stream
 
+    persona_name = (request.persona_name or "").strip() or None
+
     if not stream:
         result = run_pipeline(
             query,
+            persona_name=persona_name,
             status_callback=None,
             stream_callback=None,
             stream=False,
@@ -60,6 +87,7 @@ async def analyze(request: QueryRequest):
             try:
                 result = run_pipeline(
                     query,
+                    persona_name=persona_name,
                     status_callback=on_status,
                     stream_callback=on_delta if stream else None,
                     stream=stream,
