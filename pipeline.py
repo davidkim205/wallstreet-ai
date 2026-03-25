@@ -3,15 +3,14 @@ import json
 import textwrap
 import time
 from datetime import datetime
-from typing import Any
-from dataclasses import dataclass, field
+from typing import Any, Callable, Optional
+from dataclasses import dataclass, field, asdict, is_dataclass
 from openai import OpenAI
-from dataclasses import asdict
 from dotenv import load_dotenv
 
 
 from intent.intent_parser import parse_intent
-from llm.generator import generate_analysis, generate_news_info
+from llm.generator import generate_analysis, generate_analysis_stream, generate_news_info
 
 from data.collect_data import collect_data
 
@@ -48,7 +47,19 @@ def print_timings(timings):
 
 def save_result_jsonl(result):
     file_name = os.environ.get("LOG_FILE", "log_file.jsonl")
-    data = asdict(result)
+
+    def _json_safe(value):
+        if is_dataclass(value):
+            return {k: _json_safe(v) for k, v in asdict(value).items()}
+        if isinstance(value, dict):
+            return {k: _json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_json_safe(v) for v in value]
+        if isinstance(value, (datetime, )):
+            return value.isoformat()
+        return value
+
+    data = _json_safe(result)
 
     ordered_data = {
         "timestamp": data.get("timestamp"),
@@ -58,7 +69,7 @@ def save_result_jsonl(result):
     with open(file_name, "a", encoding="utf-8") as f:
         f.write(json.dumps(ordered_data, ensure_ascii=False) + "\n")
 
-def pipeline(query, persona_name=None):
+def pipeline(query, persona_name=None, status_callback=None, stream_callback=None, stream=True):
     """
     파이프라인:
         ① 인텐트 파싱  (Chat Completions + Function Calling)
@@ -72,6 +83,13 @@ def pipeline(query, persona_name=None):
     start_total = time.time()
 
     persona = get_persona(persona_name) if persona_name else None
+    def emit_status(message: str):
+        if status_callback:
+            status_callback(message)
+
+    def emit_delta(delta: str):
+        if stream_callback:
+            stream_callback(delta)
 
     print(f"\n{'='*60}")
     print(f"Wallstreet-AI 분석 시작: {query}")
@@ -79,23 +97,42 @@ def pipeline(query, persona_name=None):
         print(f"[Persona] {persona.name}")
     print('='*60)
 
+    emit_status("인텐트 분석 중...")
     with timed(timings, 'intent_parse'):
         intent = parse_intent(client, query)
 
+    emit_status("도구 라우팅 중...")
     with timed(timings, 'tool_route'):
         tools = route_tools(intent)
 
+    emit_status("시장 데이터 수집 중...")
     with timed(timings, 'data_collect'):
         market_data = collect_data(client, intent, tools)
 
+    emit_status("뉴스 컨텍스트 생성 중...")
     with timed(timings, 'context_build'):
         news_str = generate_news_info(client, query, intent)
+        emit_status("컨텍스트 빌드 중...")
         context = build_context(market_data, intent, news_str=news_str)
 
+    emit_status("LLM 분석 생성 중...")
     with timed(timings, 'analysis_generate'):
-        response = generate_analysis(
-            client, query, context, intent, news_str=news_str, persona=persona
-        )
+        if stream:
+            chunks = []
+            print("[⑤] 스트리밍 응답 수신 중...")
+            for delta in generate_analysis_stream(client, query, context, intent, news_str=news_str, persona=persona):
+                if not delta:
+                    continue
+                chunks.append(delta)
+                print(delta, end="", flush=True)
+                emit_delta(delta)
+            print()
+            response = "".join(chunks).strip() or "(분석 결과를 가져오지 못했습니다)"
+        else:
+            print("[⑤] 단일 응답 생성 중...")
+            response = generate_analysis(client, query, context, intent, news_str=news_str, persona=persona)
+            if response:
+                emit_delta(response)
 
     timings['total'] = time.time() - start_total
 
