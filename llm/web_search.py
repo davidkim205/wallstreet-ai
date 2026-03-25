@@ -1,6 +1,7 @@
 from datetime import datetime
 import os
 
+
 def build_web_search_query(analysis_type, base, target_year, target_quarter, today):
     if analysis_type == "news_summary":
         return f"{today} 기준 {base} 최신 뉴스 및 주요 이슈"
@@ -14,6 +15,7 @@ def build_web_search_query(analysis_type, base, target_year, target_quarter, tod
         return f"{base} 최신 사업 현황, 경쟁사 동향, 리스크 요인 {today}"
     return f"{base} 최신 투자 정보 및 시장 동향 {today}"
 
+
 def extract_web_search_blocks(resp):
     results = []
     for item in resp.output:
@@ -22,12 +24,12 @@ def extract_web_search_blocks(resp):
         for block in (getattr(item, "content", []) or []):
             if getattr(block, "type", None) != "output_text":
                 continue
-            text        = getattr(block, "text", "") or ""
+            text = getattr(block, "text", "") or ""
             annotations = getattr(block, "annotations", []) or []
-            citations   = [
+            citations = [
                 {
                     "title": getattr(ann, "title", ""),
-                    "url":   getattr(ann, "url", ""),
+                    "url": getattr(ann, "url", ""),
                 }
                 for ann in annotations
                 if getattr(ann, "type", "") == "url_citation"
@@ -36,7 +38,8 @@ def extract_web_search_blocks(resp):
                 results.append({"text": text.strip(), "citations": citations})
     return results
 
-def fetch_web_search(client, ticker, company_name, analysis_type, language="ko", target_year=None, target_quarter=None):
+
+async def fetch_web_search(client, ticker, company_name, analysis_type, language="ko", target_year=None, target_quarter=None):
     today  = datetime.now().strftime("%Y년 %m월 %d일")
     base   = f"{company_name}({ticker})" if ticker else company_name
     query  = build_web_search_query(
@@ -46,7 +49,7 @@ def fetch_web_search(client, ticker, company_name, analysis_type, language="ko",
     results = []
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
     try:
-        resp = client.responses.create(
+        resp = await client.responses.create(
             model=LLM_MODEL_NAME,
             tools=[
                 {

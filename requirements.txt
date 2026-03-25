@@ -9,3 +9,5 @@ jupyter
 openai
 fastapi
 uvicorn
+dotenv
+gradio
