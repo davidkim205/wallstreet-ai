@@ -488,6 +488,7 @@ def main():
     print(f"Gradio  : http://{args.server_name}:{args.port}")
 
     app = create_app(args.api_url)
+    app.queue(default_concurrency_limit=8, max_size=64)
     app.launch(
         share=args.share,
         server_name=args.server_name,
