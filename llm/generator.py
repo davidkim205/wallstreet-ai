@@ -107,12 +107,12 @@ async def generate_analysis(
 
     request_kwargs = dict(
         model=LLM_MODEL_NAME,
-        tools=[
-            {
-                "type": "web_search",
-                "user_location": {"type": "approximate", "country": "KR"},
-            }
-        ],
+        # tools=[
+        #     {
+        #         "type": "web_search",
+        #         "user_location": {"type": "approximate", "country": "KR"}
+        #     }
+        # ],
         input=full_input,
     )
 
