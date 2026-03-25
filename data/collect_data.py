@@ -46,18 +46,18 @@ def collect_data(client, intent, tools):
                 target_year=intent.get("target_year"),
                 target_quarter=intent.get("target_quarter")
             )
-
-    if "web_search" in tools:
-        company_name = fundamentals.get("company_name", ticker) if fundamentals else ticker
-        web_search_results = fetch_web_search(
-            client=client,
-            ticker=ticker,
-            company_name=company_name,
-            analysis_type=intent.get("analysis_type", "general"),
-            language=intent.get("language", "ko"),
-            target_year=intent.get("target_year"),
-            target_quarter=intent.get("target_quarter"),
-        )
+    # fetch_web_search는 너무 오래 걸린다.
+    # if "web_search" in tools:
+    #     company_name = fundamentals.get("company_name", ticker) if fundamentals else ticker
+    #     web_search_results = fetch_web_search(
+    #         client=client,
+    #         ticker=ticker,
+    #         company_name=company_name,
+    #         analysis_type=intent.get("analysis_type", "general"),
+    #         language=intent.get("language", "ko"),
+    #         target_year=intent.get("target_year"),
+    #         target_quarter=intent.get("target_quarter"),
+    #     )
 
     return MarketData(
         ticker=ticker,

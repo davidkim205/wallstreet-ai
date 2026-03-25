@@ -80,12 +80,12 @@ def generate_analysis(client, user_query, context, intent, news_str):
 
     resp = client.responses.create(
         model=LLM_MODEL_NAME,
-        tools=[
-            {
-                "type": "web_search",
-                "user_location": {"type": "approximate", "country": "KR"}
-            }
-        ],
+        # tools=[
+        #     {
+        #         "type": "web_search",
+        #         "user_location": {"type": "approximate", "country": "KR"}
+        #     }
+        # ],
         input=full_input,
     )
 

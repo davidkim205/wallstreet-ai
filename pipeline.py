@@ -1,10 +1,13 @@
 import os
 import json
 import textwrap
+import time
 from datetime import datetime
 from typing import Any
 from dataclasses import dataclass, field
 from openai import OpenAI
+from dataclasses import asdict
+from dotenv import load_dotenv
 
 
 from intent.intent_parser import parse_intent
@@ -15,7 +18,6 @@ from data.collect_data import collect_data
 from context.context_builder import build_context
 from intent.intent_parser import route_tools
 from utils.data_types import AnalysisResult
-from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -25,6 +27,35 @@ if api_key:
     client = OpenAI(api_key=api_key)
 else:
     client = OpenAI()
+
+
+def timed(timings, key):
+    """컨텍스트 매니저: 블록 실행 시간을 timings[key]에 기록."""
+    class _Timer:
+        def __enter__(self):
+            self._t = time.time()
+        def __exit__(self, *_):
+            timings[key] = time.time() - self._t
+    return _Timer()
+
+
+def print_timings(timings):
+    print("\n[소요시간(sec)]:")
+    for k, v in timings.items():
+        print(f"  {k:20s}: {v:.2f}s")
+
+
+def save_result_jsonl(result):
+    file_name = os.environ.get("LOG_FILE", "log_file.jsonl")
+    data = asdict(result)
+
+    ordered_data = {
+        "timestamp": data.get("timestamp"),
+        **{k: v for k, v in data.items() if k != "timestamp"}
+    }
+
+    with open(file_name, "a", encoding="utf-8") as f:
+        f.write(json.dumps(ordered_data, ensure_ascii=False) + "\n")
 
 def pipeline(query):
     """
@@ -36,42 +67,44 @@ def pipeline(query):
         ⑤ 분석 생성   (Responses API + web_search 상시 활성)
     """
     global client
+    timings = {}
+    start_total = time.time()
     print(f"\n{'='*60}")
     print(f"Wallstreet-AI 분석 시작: {query}")
     print('='*60)
 
-    # 1. intent 파싱, 2. tool 라우팅, 3. 데이터 수집
-    intent      = parse_intent(client, query)
-    tools       = route_tools(intent)
-    market_data = collect_data(client, intent, tools)
+    with timed(timings, 'intent_parse'):
+        intent = parse_intent(client, query)
 
-    # 4. 구글 뉴스 정보 생성 및 컨텍스트에 포함
-    news_str = generate_news_info(client, query, intent)
-    context = build_context(market_data, intent, news_str=news_str)
+    with timed(timings, 'tool_route'):
+        tools = route_tools(intent)
+
+    with timed(timings, 'data_collect'):
+        market_data = collect_data(client, intent, tools)
+
+    with timed(timings, 'context_build'):
+        news_str = generate_news_info(client, query, intent)
+        context = build_context(market_data, intent, news_str=news_str)
     print(f"[④] 컨텍스트 빌드 완료 ({len(context)} 문자)")
 
-    # 5. 분석 생성 (news_str는 이미 context에 포함되었으므로 전달하지 않음)
-    response = generate_analysis(client, query, context, intent, news_str=None)
+    with timed(timings, 'analysis_generate'):
+        response = generate_analysis(client, query, context, intent, news_str=None)
+
+    timings['total'] = time.time() - start_total
 
     result = AnalysisResult(
         query=query,
         ticker=intent.get("ticker", ""),
         analysis_type=intent.get("analysis_type", "general"),
-        data_context={
-            "price":             market_data.price_data,
-            "fundamentals":      market_data.fundamentals,
-            "technicals":        market_data.technicals,
-            "news_count":        len(market_data.news_snippets),
-            "earnings":          market_data.earnings_data,
-            "web_search_blocks": len(market_data.web_search_results),
-            "google_news":       news_str,  
-        },
+        data_context=market_data,
         llm_response=response
     )
 
+    save_result_jsonl(result)
+
     print("\n[완료] 분석 완료 ✓")
-    print('\ncontext info')
-    print(context)
+    print_timings(timings)
+        
     return result
 
 
@@ -89,15 +122,20 @@ def print_result(result):
     print()
 
     ctx = result.data_context
+    earnings = getattr(ctx, 'earnings_data', None) or {}
+    stats = {
+        "펀더멘털 지표 수":    len(getattr(ctx, 'fundamentals', {}) or {}),
+        "가격 데이터 지표 수": len(getattr(ctx, 'price_data', {}) or {}),
+        "기술적 지표 수":      len(getattr(ctx, 'technicals', {}) or {}),
+        "뉴스 헤드라인 수":    len(getattr(ctx, 'news_snippets', []) or []),
+        "분기 실적 수":        len(earnings.get('quarterly_results', [])),
+        "연간 실적 수":        len(earnings.get('annual_results', [])),
+        "웹 검색 블록 수":     len(getattr(ctx, 'web_search_results', []) or []),
+    }
     print("[수집 데이터 요약]")
-    print(f"  펀더멘털 지표 수:    {len(ctx.get('fundamentals', {}))}")
-    print(f"  가격 데이터 지표 수: {len(ctx.get('price', {}))}")
-    print(f"  기술적 지표 수:      {len(ctx.get('technicals', {}))}")
-    print(f"  뉴스 헤드라인 수:    {ctx.get('news_count', 0)}")
-    print(f"  분기 실적 수:        {len(ctx.get('earnings', {}).get('quarterly_results', []))}")
-    print(f"  연간 실적 수:        {len(ctx.get('earnings', {}).get('annual_results', []))}")
-    print(f"  웹 검색 블록 수:     {ctx.get('web_search_blocks', 0)}")
-    print(f"  구글 뉴스 요약 포함:   {'예' if ctx.get('google_news') else '아니오'}")
+    for label, val in stats.items():
+        print(f"  {label:20s}: {val}")
+    print(f"  {'구글 뉴스 요약 포함':20s}: {'예' if getattr(ctx, 'google_news', None) else '아니오'}")
 
 def main():
     while True:
@@ -112,7 +150,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# FastAPI 실행 진입점
-# (uvicorn으로 실행: uvicorn api_server:app --reload)
-
