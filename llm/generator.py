@@ -59,49 +59,6 @@ def generate_news_info(client, user_query, intent):
     news_str = format_news_list(news_list)
     return news_str
 
-
-def generate_analysis(client, user_query, context, intent, news_str, persona=None):
-    analysis_type = intent.get("analysis_type", "general")
-    language      = intent.get("language", "ko")
-    system_prompt = SYSTEM_PROMPTS.get(analysis_type, SYSTEM_PROMPTS["general"])
-    
-    system_prompt += f"\n\n반드시 {language} 언어로 답변하세요. 투자 조언이 아닌 정보 제공임을 명시하세요."
-
-    if persona:
-        system_prompt += f"""
-        
-[선택된 페르소나]
-이름: {persona.name}
-배경: {persona.background}
-금융 사고방식: {persona.financial_mindset}
-데이터 분석 방식: {persona.data_analysis_approach}
-답변 스타일: {persona.response_style}
-핵심 원칙: {", ".join(persona.key_principles)}
-"""
-        if persona.famous_quotes:
-            system_prompt += f"\n대표 어록: {' / '.join(persona.famous_quotes)}"
-
-    full_input = f"""{system_prompt}
-
-[수집된 시장 데이터]
-{context}
-
-[사용자 질의]
-{user_query}
-
-[최신 구글 뉴스]
-{news_str} """
-
-    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
-    resp = client.responses.create(
-        model=LLM_MODEL_NAME,
-        input=full_input,
-    )
-
-    result = extract_response_text(resp)
-    return result or "(분석 결과를 가져오지 못했습니다)"
-
-
 class Persona(BaseModel):
     name: str                        # 인물 이름
     background: str                  # 인물 배경 (경력, 주요 업적 등)
@@ -148,22 +105,18 @@ def generate_persona(client, user_query):
     return None
 
 
-def _event_get(event, key, default=None):
-    if isinstance(event, dict):
-        return event.get(key, default)
-    return getattr(event, key, default)
-
-
-def generate_analysis_stream(client, user_query, context, intent, news_str, persona=None):
-    """Responses API 스트림에서 텍스트 델타를 순차적으로 반환."""
+def build_full_prompt(user_query, context, intent, persona=None):
     analysis_type = intent.get("analysis_type", "general")
-    language = intent.get("language", "ko")
+    language      = intent.get("language", "ko")
     system_prompt = SYSTEM_PROMPTS.get(analysis_type, SYSTEM_PROMPTS["general"])
-    system_prompt += f"\n\n반드시 {language} 언어로 답변하세요. 투자 조언이 아닌 정보 제공임을 명시하세요."
     
+    system_prompt += f"\n\n반드시 {language} 언어로 답변하세요. 투자 조언이 아닌 정보 제공임을 명시하세요."
+
     if persona:
         system_prompt += f"""
-        
+[사용자 질의]
+{user_query}
+
 [선택된 페르소나]
 이름: {persona.name}
 배경: {persona.background}
@@ -175,27 +128,40 @@ def generate_analysis_stream(client, user_query, context, intent, news_str, pers
         if persona.famous_quotes:
             system_prompt += f"\n대표 어록: {' / '.join(persona.famous_quotes)}"
 
-    full_input = f"""{system_prompt}
+    full_prompt = f"""{system_prompt}
 
 [수집된 시장 데이터]
-{context}
+{context}"""
+    return full_prompt
 
-[사용자 질의]
-{user_query}
+def generate_analysis(client, user_query, context, intent, persona=None):
+    full_prompt = build_full_prompt(user_query, context, intent, persona)
+    LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
+    resp = client.responses.create(
+        model=LLM_MODEL_NAME,
+        input=full_prompt,
+    )
 
-[최신 구글 뉴스]
-{news_str} """
+    result = extract_response_text(resp)
+    return result or "(분석 결과를 가져오지 못했습니다)"
 
+def generate_analysis_stream(client, user_query, context, intent, persona=None):
+   
+    full_prompt = build_full_prompt(user_query, context, intent, persona)
     llm_model_name = os.environ.get("LLM_MODEL_NAME")
     print(f"[⑤] LLM 분석 스트리밍 생성 중 (Responses API, 모델: {llm_model_name})...")
 
     chunks = []
     final_text = ""
 
+    def _event_get(event, key, default=None):
+        if isinstance(event, dict):
+            return event.get(key, default)
+        return getattr(event, key, default)
     # SDK에 따라 stream API 형태가 다를 수 있어 create(stream=True) 기준으로 처리
     stream = client.responses.create(
         model=llm_model_name,
-        input=full_input,
+        input=full_prompt,
         stream=True,
     )
 

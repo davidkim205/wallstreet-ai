@@ -120,7 +120,7 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
         if stream:
             chunks = []
             print("[⑤] 스트리밍 응답 수신 중...")
-            for delta in generate_analysis_stream(client, query, context, intent, news_str=news_str, persona=persona):
+            for delta in generate_analysis_stream(client, query, context, intent, persona=persona):
                 if not delta:
                     continue
                 chunks.append(delta)
@@ -130,7 +130,7 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
             response = "".join(chunks).strip() or "(분석 결과를 가져오지 못했습니다)"
         else:
             print("[⑤] 단일 응답 생성 중...")
-            response = generate_analysis(client, query, context, intent, news_str=news_str, persona=persona)
+            response = generate_analysis(client, query, context, intent, persona=persona)
             if response:
                 emit_delta(response)
 
