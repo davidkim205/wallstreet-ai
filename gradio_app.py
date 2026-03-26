@@ -6,11 +6,10 @@ import time
 from pathlib import Path
 from queue import Empty, Queue
 from threading import Thread
-from typing import Generator, List, Tuple
 
 import gradio as gr
 import requests
-
+from pydantic import BaseModel
 
 PERSONA_FILE = Path(os.environ.get("PERSONA_FILE", "persona.jsonl"))
 
@@ -52,11 +51,13 @@ AUTO_SCROLL_SCRIPT = """
 """
 
 
-def to_markdown(text: str) -> str:
+def to_markdown(text):
+    # 텍스트를 마크다운 문자열로 반환
     return text or ""
 
 
-def loading_markdown(message: str) -> str:
+def loading_markdown(message):
+    # 로딩 메시지를 안전하게 HTML로 감싸서 반환
     safe_message = html_lib.escape(message or "")
     return (
         '<div class="ws-loading shimmer">'
@@ -66,11 +67,23 @@ def loading_markdown(message: str) -> str:
     )
 
 
-def timer_text(elapsed: str) -> str:
+def timer_text(elapsed):
+    # 타이머 텍스트 형식으로 변환
     return f"⏱ {elapsed}"
 
 
-def load_persona_choices() -> List[str]:
+class PersonaLine(BaseModel):
+    # persona.jsonl 파일 한 줄 스키마
+    name: str = ""
+    background: str = ""
+    financial_mindset: str = ""
+    data_analysis_approach: str = ""
+    response_style: str = ""
+    key_principles: list = []
+    famous_quotes: list = []
+
+
+def load_persona_names():
     # persona.jsonl에서 persona 이름 목록 로드
     choices = ["없음"]
     if PERSONA_FILE.exists():
@@ -81,28 +94,36 @@ def load_persona_choices() -> List[str]:
                     continue
                 try:
                     data = json.loads(line)
-                    name = data.get("name", "")
+                    persona = PersonaLine(**data)
+                    name = persona.name.strip()
                     if name and name not in choices:
                         choices.append(name)
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, TypeError):
                     continue
     return choices
 
 
-def make_persona_gradio(info: str, endpoint: str):
+def _make_elapsed_factory():
+    # 경과시간 문자열 생성기 팩토리 반환
+    start_time = time.time()
+
+    def elapsed_str():
+        return f"{time.time() - start_time:.1f}초"
+
+    return elapsed_str, start_time
+
+
+def generate_persona_stream(info, endpoint):
     # API 서버 /persona/ 를 호출하여 persona 생성 (generator: 타이머 + 진행 메시지 표시)
     if not info or not info.strip():
         yield "인물 정보를 입력해주세요.", "{}", timer_text("0.0초")
         return
 
     persona_endpoint = endpoint.rstrip("/").rsplit("/", 1)[0] + "/persona/"
-    start_time = time.time()
-    result_queue: Queue = Queue()
+    elapsed_str, _ = _make_elapsed_factory()
+    result_queue = Queue()
 
-    def elapsed_str() -> str:
-        return f"{time.time() - start_time:.1f}초"
-
-    def worker() -> None:
+    def worker():
         try:
             resp = requests.post(
                 persona_endpoint,
@@ -154,9 +175,8 @@ def make_persona_gradio(info: str, endpoint: str):
     yield result_md, json.dumps(data, ensure_ascii=False, indent=2), timer_text(elapsed_str())
 
 
-def stream_analyze(
-    query: str, persona_name: str, endpoint: str
-) -> Generator[Tuple[str, str, str], None, None]:
+def stream_analyze(query, persona_name, endpoint):
+    # 질의에 대해 SSE 스트림을 받아 점진적으로 응답과 메타데이터를 반환
     query = (query or "").strip()
     endpoint = (endpoint or "").strip()
     persona_name = (persona_name or "").strip()
@@ -174,14 +194,11 @@ def stream_analyze(
     loading_msg = "요청 중..."
     worker_finished = False
     terminal_event = False
-    start_time = time.time()
+    elapsed_str, _ = _make_elapsed_factory()
 
-    event_queue: Queue = Queue()
+    event_queue = Queue()
 
-    def elapsed_str() -> str:
-        return f"{time.time() - start_time:.1f}초"
-
-    def reader_worker() -> None:
+    def reader_worker():
         try:
             payload = {"query": query}
             if persona_name and persona_name != "없음":
@@ -293,7 +310,8 @@ def stream_analyze(
             break
 
 
-def create_app(default_endpoint: str) -> gr.Blocks:
+def create_app(default_endpoint):
+    # Gradio 앱 생성 및 레이아웃 구성
     custom_css = """
     @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap");
 
@@ -523,6 +541,11 @@ def create_app(default_endpoint: str) -> gr.Blocks:
         padding: 16px 20px !important;
         box-shadow: 0 8px 24px rgba(16, 24, 40, 0.06) !important;
     }
+
+    /* 드롭다운 열릴 때 페이지 스크롤 고정 */
+    body:has(.options:not(.hide)) {
+        overflow: hidden !important;
+    }
     """
 
     theme = gr.themes.Soft(
@@ -537,7 +560,6 @@ def create_app(default_endpoint: str) -> gr.Blocks:
         gr.Markdown("A finance AI that combines earnings, news, and market trends in one place.")
 
         with gr.Tabs():
-            # ── Tab 1: 질문하기 ──────────────────────────────────────
             with gr.Tab("💬 질문하기"):
                 with gr.Row():
                     with gr.Column(scale=3):
@@ -547,7 +569,7 @@ def create_app(default_endpoint: str) -> gr.Blocks:
                         )
                         persona_dropdown = gr.Dropdown(
                             label="페르소나 선택",
-                            choices=load_persona_choices(),
+                            choices=load_persona_names(),
                             value="없음",
                             interactive=True,
                         )
@@ -589,11 +611,10 @@ def create_app(default_endpoint: str) -> gr.Blocks:
                     outputs=[answer, timer, meta],
                 )
                 refresh_btn.click(
-                    fn=lambda: gr.Dropdown(choices=load_persona_choices(), value="없음"),
+                    fn=lambda: gr.Dropdown(choices=load_persona_names(), value="없음"),
                     outputs=[persona_dropdown],
                 )
 
-            # ── Tab 2: 페르소나 만들기 ────────────────────────────────
             with gr.Tab("🧑‍💼 페르소나 만들기"):
                 gr.Markdown("### 새 페르소나 생성")
                 gr.Markdown(
@@ -631,7 +652,7 @@ def create_app(default_endpoint: str) -> gr.Blocks:
                 )
 
                 persona_gen_btn.click(
-                    fn=make_persona_gradio,
+                    fn=generate_persona_stream,
                     inputs=[persona_info_input, endpoint],
                     outputs=[persona_result_md, persona_result_json, persona_timer],
                 )
