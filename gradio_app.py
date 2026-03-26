@@ -9,7 +9,7 @@ from threading import Thread
 
 import gradio as gr
 import requests
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 PERSONA_FILE = Path(os.environ.get("PERSONA_FILE", "persona.jsonl"))
 
@@ -74,13 +74,14 @@ def timer_text(elapsed):
 
 class PersonaLine(BaseModel):
     # persona.jsonl 파일 한 줄 스키마
-    name: str = ""
-    background: str = ""
-    financial_mindset: str = ""
-    data_analysis_approach: str = ""
-    response_style: str = ""
-    key_principles: list = []
-    famous_quotes: list = []
+    name: str
+    full_name: str
+    background: str
+    financial_mindset: str
+    data_analysis_approach: str
+    response_style: str
+    key_principles: list[str]
+    famous_quotes: list[str] | None = None
 
 
 def load_persona_names():
@@ -94,11 +95,14 @@ def load_persona_names():
                     continue
                 try:
                     data = json.loads(line)
+                    # full_name 없으면 name 사용하여 채움
+                    if isinstance(data, dict) and not data.get("full_name"):
+                        data["full_name"] = data.get("name", "")
                     persona = PersonaLine(**data)
                     name = persona.name.strip()
                     if name and name not in choices:
                         choices.append(name)
-                except (json.JSONDecodeError, TypeError):
+                except (json.JSONDecodeError, TypeError, ValidationError):
                     continue
     return choices
 

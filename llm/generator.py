@@ -61,6 +61,7 @@ def generate_news_info(client, user_query, intent):
 
 class Persona(BaseModel):
     name: str                        # 인물 이름
+    full_name: str                   # 인물 이름
     background: str                  # 인물 배경 (경력, 주요 업적 등)
     financial_mindset: str           # 금융 사고 방식
     data_analysis_approach: str      # 데이터 분석 방식
@@ -70,9 +71,12 @@ class Persona(BaseModel):
 
 def generate_persona(client, user_query):
     system_prompt = (
-        "아래 금융 인물에 대해 자세히 검색을 한다음 "
-        "인물에 대한 금융 사고 방식, 인물이 데이터를 분석하는 방식, "
-        "질문에 대한 답변 스타일을 작성하시오."
+        "아래 금융 인물을 웹 검색으로 확인한 뒤 Persona 스키마에 맞춰 작성하시오.\n"
+        "이름 규칙:\n"
+        "- full_name: 인물의 원문/정식 전체 이름.\n"
+        "- name: 사용자가 이해하기 쉬운 표시 이름(한국어 통용명 우선, 없으면 간결한 영어).\n"
+        "- 괄호 별칭/원문 병기는 full_name에만 포함하고 name에는 넣지 말 것.\n"
+        "나머지 필드는 사실 기반으로 충실히 작성하시오."
     )
 
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
