@@ -11,3 +11,5 @@ fastapi
 uvicorn
 dotenv
 gradio
+trafilatura
+curl_cffi
