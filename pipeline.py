@@ -189,10 +189,17 @@ def main():
     for i, p in enumerate(personas, 1):
         print(f"{i}. {p.name}")
 
-    persona_name = input("\npersona 이름 입력(없으면 Enter): ").strip()
-    if persona_name and not any(p.name == persona_name for p in personas):
-        print("해당 persona 없음. 기본 모드로 진행합니다.")
-        persona_name = None
+    persona_name = None
+    persona_num = input("\npersona 번호 입력(없으면 Enter): ").strip()
+    if persona_num:
+        try:
+            idx = int(persona_num) - 1
+            if 0 <= idx < len(personas):
+                persona_name = personas[idx].name
+            else:
+                print("해당 번호의 persona 없음. 기본 모드로 진행합니다.")
+        except ValueError:
+            print("잘못된 입력입니다. 기본 모드로 진행합니다.")
 
     while True:
         text = input("\n질문 > ").strip()
