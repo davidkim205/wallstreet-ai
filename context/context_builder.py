@@ -7,6 +7,16 @@ def _fmt_krw(val):
     return "N/A" if val is None else f"{val:.2f}"
 
 
+def _fmt_num(val):
+    if val is None or val != val:
+        return "N/A"
+    if isinstance(val, int):
+        return f"{val:,}"
+    if isinstance(val, float):
+        return f"{val:,.2f}"
+    return str(val)
+
+
 def _pct(val):
     if val is None or val != val:
         return "N/A"
@@ -20,7 +30,8 @@ def _upside(current, target):
 
 
 def build_company_section(fd, ticker):
-    return f"""[기업 정보]\n회사명: {fd.get('company_name', ticker)}\n섹터: {fd.get('sector', 'N/A')} / {fd.get('industry', 'N/A')}\n시가총액: ${fd.get('market_cap_b', 'N/A')}B\n사업 설명: {fd.get('description', 'N/A')}"""
+    location = " / ".join(x for x in [fd.get("city"), fd.get("country")] if x)
+    return f"""[기업 정보]\n회사명: {fd.get('company_name', ticker)} ({fd.get('symbol', ticker)})\n섹터: {fd.get('sector', 'N/A')} / {fd.get('industry', 'N/A')}\n거래소: {fd.get('exchange', 'N/A')} / 통화: {fd.get('currency', 'N/A')}\n본사: {location or 'N/A'} / 직원 수: {_fmt_num(fd.get('full_time_employees'))}\n시가총액: ${fd.get('market_cap_b', 'N/A')}B / EV: ${fd.get('enterprise_value_b', 'N/A')}B\n사업 설명: {fd.get('description', 'N/A')}"""
 
 
 def build_price_section(pd):
@@ -28,12 +39,16 @@ def build_price_section(pd):
 
 
 def build_valuation_section(fd):
-    return f"""[밸류에이션 & 재무]\nPER(TTM): {fd.get('pe_ratio', 'N/A')} / 선행 PER: {fd.get('forward_pe', 'N/A')}\nPBR: {fd.get('pb_ratio', 'N/A')} / PSR: {fd.get('ps_ratio', 'N/A')}\nROE: {_pct(fd.get('roe'))} / ROA: {_pct(fd.get('roa'))}\n순이익률: {_pct(fd.get('profit_margin'))}\n매출 성장률: {_pct(fd.get('revenue_growth'))} / 이익 성장률: {_pct(fd.get('earnings_growth'))}\n부채비율: {fd.get('debt_to_equity', 'N/A')} / 유동비율: {fd.get('current_ratio', 'N/A')}\n배당수익률: {_pct(fd.get('dividend_yield'))} / 베타: {fd.get('beta', 'N/A')}"""
+    return f"""[밸류에이션 & 재무]\nPER(TTM): {fd.get('pe_ratio', 'N/A')} / 선행 PER: {fd.get('forward_pe', 'N/A')}\nPBR: {fd.get('pb_ratio', 'N/A')} / PSR: {fd.get('ps_ratio', 'N/A')} / EV/EBITDA: {fd.get('ev_to_ebitda', 'N/A')}\nEPS(TTM): {fd.get('trailing_eps', 'N/A')} / 선행 EPS: {fd.get('forward_eps', 'N/A')}\nROE: {_pct(fd.get('roe'))} / ROA: {_pct(fd.get('roa'))}\n매출총이익률: {_pct(fd.get('gross_margin'))} / 영업이익률: {_pct(fd.get('operating_margin'))} / EBITDA 마진: {_pct(fd.get('ebitda_margin'))}\n순이익률: {_pct(fd.get('profit_margin'))}\n매출 성장률: {_pct(fd.get('revenue_growth'))} / 이익 성장률: {_pct(fd.get('earnings_growth'))}\n부채비율: {fd.get('debt_to_equity', 'N/A')} / 유동비율: {fd.get('current_ratio', 'N/A')} / 당좌비율: {fd.get('quick_ratio', 'N/A')}\n총현금: ${fd.get('total_cash_b', 'N/A')}B / 총부채: ${fd.get('total_debt_b', 'N/A')}B\n영업현금흐름: ${fd.get('operating_cashflow_b', 'N/A')}B / 잉여현금흐름: ${fd.get('free_cashflow_b', 'N/A')}B\n배당수익률: {_pct(fd.get('dividend_yield'))} / 배당성향: {_pct(fd.get('payout_ratio'))} / 베타: {fd.get('beta', 'N/A')}"""
 
 
 def build_analyst_section(fd, pd):
     rec = fd.get("recommendation", "")
-    return f"""[애널리스트 컨센서스]\n평균 목표주가: ${fd.get('analyst_target', 'N/A')}\n투자의견: {rec.upper() if rec else 'N/A'}\n현재가 대비 상승여력: {_upside(pd.get('current_price'), fd.get('analyst_target'))}"""
+    return f"""[애널리스트 컨센서스]\n평균 목표주가: ${fd.get('analyst_target', 'N/A')} / 상단: ${fd.get('target_high_price', 'N/A')} / 하단: ${fd.get('target_low_price', 'N/A')}\n투자의견: {rec.upper() if rec else 'N/A'} / 커버 애널리스트 수: {_fmt_num(fd.get('analyst_opinion_count'))}\n현재가 대비 상승여력: {_upside(pd.get('current_price'), fd.get('analyst_target'))}"""
+
+
+def build_capital_structure_section(fd):
+    return f"""[수급 & 자본구조]\n발행주식수: {_fmt_num(fd.get('shares_outstanding_b'))}B주 / 유통주식수: {_fmt_num(fd.get('float_shares_b'))}B주\n내부자 보유율: {_pct(fd.get('held_percent_insiders'))} / 기관 보유율: {_pct(fd.get('held_percent_institutions'))}\n공매도 비율(Short Ratio): {fd.get('short_ratio', 'N/A')} / 유통주식 대비 공매도: {_pct(fd.get('short_percent_float'))}\n최근 배당금: {fd.get('dividend_rate', 'N/A')} / 배당락일: {fd.get('ex_dividend_date', 'N/A')}"""
 
 
 def build_technicals_section(td):
@@ -165,6 +180,13 @@ def build_context(market_data, intent, news_str=None):
         sections.append(build_valuation_section(fd))
     if fd.get("analyst_target"):
         sections.append(build_analyst_section(fd, pd))
+    if fd and any(fd.get(k) is not None for k in [
+        "shares_outstanding_b",
+        "held_percent_institutions",
+        "short_ratio",
+        "dividend_rate",
+    ]):
+        sections.append(build_capital_structure_section(fd))
     if td:
         sections.append(build_technicals_section(td))
     if ed:
