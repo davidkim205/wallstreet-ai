@@ -193,7 +193,9 @@ def stream_analyze(query, persona_name, endpoint):
         return
 
     text_acc = ""
+    result_meta_text = ""
     meta_text = ""
+    stdout_acc = ""
     first_delta_received = False
     loading_msg = "요청 중..."
     worker_finished = False
@@ -201,6 +203,14 @@ def stream_analyze(query, persona_name, endpoint):
     elapsed_str, _ = _make_elapsed_factory()
 
     event_queue = Queue()
+
+    def build_meta_text():
+        sections = []
+        if result_meta_text:
+            sections.append(result_meta_text)
+        if stdout_acc:
+            sections.append(f"[stdout]\n{stdout_acc}")
+        return "\n\n".join(sections)
 
     def reader_worker():
         try:
@@ -271,12 +281,19 @@ def stream_analyze(query, persona_name, endpoint):
 
                 elif event_type == "result":
                     result = payload.get("result", payload)
-                    meta_text = json.dumps(result, ensure_ascii=False, indent=2)
+                    result_meta_text = json.dumps(result, ensure_ascii=False, indent=2)
+                    meta_text = build_meta_text()
                     if not text_acc:
                         llm_response = result.get("llm_response", "")
                         if llm_response:
                             first_delta_received = True
                             text_acc = llm_response
+
+                elif event_type == "stdout":
+                    message = payload.get("message", "")
+                    if message:
+                        stdout_acc += message
+                        meta_text = build_meta_text()
 
                 elif event_type == "error":
                     message = payload.get("message", "알 수 없는 오류")
@@ -417,7 +434,7 @@ def create_app(default_endpoint):
 
     #answer-wrapper {
         min-height: 420px;
-        max-height: 62vh;
+        max-height: 42vh;
         overflow-y: auto !important;
         border: 1px solid var(--ws-border) !important;
         border-radius: 14px !important;
@@ -479,12 +496,7 @@ def create_app(default_endpoint):
         border: 1px solid #d9e2ec;
         border-radius: 6px;
         padding: 0.1em 0.35em;
-        font-size: 0.92em;
-        font-family: "JetBrains Mono", "IBM Plex Mono", "Source Code Pro", monospace !important;
-        letter-spacing: 0.01em;
-    }
-
-    #answer-wrapper pre {
+        font-size: 0.92em;answer-wrapper
         background: #0f172a !important;
         color: #e2e8f0 !important;
         border-radius: 10px;
@@ -596,7 +608,7 @@ def create_app(default_endpoint):
 
                 answer = gr.Markdown(value=to_markdown(""), label="답변", elem_id="answer-wrapper")
                 timer = gr.Markdown(value=timer_text("0.0초"), elem_id="timer-row")
-                meta = gr.Code(label="최종 결과 (JSON)", language="json", elem_id="meta-box")
+                meta = gr.Code(label="진행 과정 출력", language="json", elem_id="meta-box")
 
                 gr.HTML(AUTO_SCROLL_SCRIPT, visible=False)
 
