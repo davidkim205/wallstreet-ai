@@ -126,7 +126,7 @@ def _status_icon(msg):
 class PersonaLine(BaseModel):
     name: str
     full_name: str
-    background: str
+    summary: str
     financial_mindset: str
     data_analysis_approach: str
     response_style: str
@@ -169,6 +169,9 @@ def _parse_personas():
                         continue
                     if not data.get("full_name"):
                         data["full_name"] = data.get("name", "")
+                    # 호환성: background 필드가 있으면 summary로 복사
+                    if "background" in data and "summary" not in data:
+                        data["summary"] = data["background"]
                     personas.append(PersonaLine(**data))
                 except (json.JSONDecodeError, TypeError, ValidationError):
                     continue
@@ -246,7 +249,7 @@ def build_profile_html(p: PersonaLine):
     <div class="pf-header-info">
       <h2 class="pf-name">{_safe(p.full_name)}</h2>
       <p class="pf-subtitle">{_safe(p.title or "")}{("&nbsp;·&nbsp;" + _safe(p.company)) if p.company else ""}</p>
-      <p class="pf-bg">{_safe(p.background)}</p>
+      <p class="pf-bg">{_safe(p.summary)}</p>
     </div>
   </div>
   {('<div class="pf-meta-grid">' + "".join(meta_rows) + '</div>') if meta_rows else ''}
@@ -388,7 +391,7 @@ def _fetch_from_multi_wiki(name):
             continue
     return ""
 
-def _fetch_wikipedia_image(full_name, background=None):
+def _fetch_wikipedia_image(full_name, summary=None):
 
     # 1. Wikidata (가장 강력)
     img = _wikidata_image(full_name)
@@ -407,8 +410,8 @@ def _fetch_wikipedia_image(full_name, background=None):
     _translate_to_english_name(full_name),
     ]
 
-    if background:
-        queries.append(_extract_english_keywords(background))
+    if summary:
+        queries.append(_extract_english_keywords(summary))
         
     for q in queries:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -437,7 +440,7 @@ def generate_persona_image(name: str) -> str:
         return cache_path.read_text()
 
     try:
-        data_url = _fetch_wikipedia_image(persona.full_name, persona.background)
+        data_url = _fetch_wikipedia_image(persona.full_name, persona.summary)
         if data_url:
             cache_path.write_text(data_url)
             return data_url
@@ -692,49 +695,100 @@ def generate_persona_stream(info, endpoint):
 
     persona_ep = endpoint.rstrip("/").rsplit("/", 1)[0] + "/persona/"
     elapsed = _make_elapsed()
-    q: Queue = Queue()
+    eq: Queue = Queue()
 
-    def worker():
+    def reader():
         try:
-            r = requests.post(persona_ep, json={"info": info.strip()}, timeout=(10, 300))
-            r.raise_for_status()
-            q.put(("ok", r.json()))
+            body = {"info": info.strip(), "stream": True}
+            with requests.post(persona_ep, json=body,
+                               headers={"Accept": "text/event-stream"},
+                               stream=True, timeout=(10, 300)) as resp:
+                resp.raise_for_status()
+                for raw in resp.iter_lines(chunk_size=1, decode_unicode=True):
+                    if not raw: continue
+                    line = raw.strip()
+                    if not line.startswith("data:"): continue
+                    try:
+                        eq.put(("event", json.loads(line[5:].strip())))
+                    except json.JSONDecodeError:
+                        continue
         except requests.exceptions.ConnectionError:
-            q.put(("error", f"연결 실패: {persona_ep}"))
+            eq.put(("exception", f"연결 실패: {persona_ep}"))
         except requests.exceptions.Timeout:
-            q.put(("error", "요청 시간 초과"))
+            eq.put(("exception", "요청 시간 초과"))
         except requests.RequestException as e:
-            q.put(("error", f"요청 실패: {e}"))
+            eq.put(("exception", f"요청 실패: {e}"))
+        finally:
+            eq.put(("worker_done", None))
 
-    Thread(target=worker, daemon=True).start()
+    Thread(target=reader, daemon=True).start()
+
+    log_lines = []
+    result_data = None
+    worker_done = False
 
     while True:
         try:
-            kind, payload = q.get_nowait(); break
+            kind, payload = eq.get(timeout=0.1)
+            buf = [(kind, payload)]
+            while True:
+                try: buf.append(eq.get_nowait())
+                except Empty: break
         except Empty:
-            yield (
-                '<div class="ws-loading shimmer"><div class="ws-loading-title">⏳ 페르소나 생성 중...</div>'
-                '<div class="ws-loading-msg">AI가 인물 정보를 검색하고 있습니다</div></div>',
-                "{}", timer_text(elapsed())
-            )
-            time.sleep(0.3)
+            buf = []
 
-    if kind == "error":
-        yield payload, "{}", timer_text(elapsed())
-        return
+        for kind, payload in buf:
+            if kind == "event":
+                et = payload.get("type")
 
-    data = payload
-    md = "\n\n".join([
-        f"**이름**: {data.get('name','')}",
-        f"**배경**: {data.get('background','')}",
-        f"**금융 사고 방식**: {data.get('financial_mindset','')}",
-        f"**데이터 분석 방식**: {data.get('data_analysis_approach','')}",
-        f"**답변 스타일**: {data.get('response_style','')}",
-        f"**핵심 원칙**: {', '.join(data.get('key_principles',[]))}",
-    ])
-    if data.get("famous_quotes"):
-        md += f"\n\n**어록**: {' / '.join(data['famous_quotes'])}"
-    yield md, json.dumps(data, ensure_ascii=False, indent=2), timer_text(elapsed())
+                if et == "status":
+                    msg = payload.get("message", "")
+                    if msg:
+                        log_lines.append(("status", msg))
+
+                elif et == "result":
+                    result_data = payload
+                    log_lines.append(("done", "페르소나 생성 완료"))
+
+                elif et == "error":
+                    msg = payload.get("message", "오류 발생")
+                    log_lines.append(("error", msg))
+
+                elif et == "done":
+                    pass  # 이미 result에서 처리
+
+            elif kind == "exception":
+                log_lines.append(("error", str(payload)))
+
+            elif kind == "worker_done":
+                worker_done = True
+
+        t = timer_text(elapsed())
+        if result_data:
+            # 최종 결과 표시
+            data = result_data
+            md = "\n\n".join([
+                f"**이름**: {data.get('name','')}",
+                f"**배경**: {data.get('summary','')}",
+                f"**금융 사고 방식**: {data.get('financial_mindset','')}",
+                f"**데이터 분석 방식**: {data.get('data_analysis_approach','')}",
+                f"**답변 스타일**: {data.get('response_style','')}",
+                f"**핵심 원칙**: {', '.join(data.get('key_principles',[]))}",
+            ])
+            if data.get("famous_quotes"):
+                md += f"\n\n**어록**: {' / '.join(data['famous_quotes'])}"
+            yield md, json.dumps(data, ensure_ascii=False, indent=2), t
+            break
+        else:
+            # 진행 상황 표시
+            panel = _wrap_log(_make_log_html(log_lines))
+            yield panel, "{}", t
+
+        if worker_done and not result_data:
+            # 오류 발생 시
+            panel = _wrap_log(_make_log_html(log_lines))
+            yield panel, "{}", t
+            break
 
 
 # ─────────────────────────────────────────────────────────────

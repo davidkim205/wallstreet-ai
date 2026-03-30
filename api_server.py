@@ -141,7 +141,7 @@ async def create_persona(request: PersonaRequest):
             async def send_status():
                 for i, message in enumerate(PERSONA_STATUS_MESSAGES[:-1]):  # 마지막 메시지는 완료 시점에 사용
                     event_queue.put({"type": "status", "message": message})
-                    await asyncio.sleep(7)
+                    await asyncio.sleep(8)
 
             # 비동기 이벤트 루프에서 실행
             loop = asyncio.new_event_loop()
