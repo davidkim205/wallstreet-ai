@@ -83,23 +83,110 @@ sys.stdout = _stdout_proxy
 
 class PersonaRequest(BaseModel):
     info: str
+    stream: bool = True
+
+
+PERSONA_STATUS_MESSAGES = [
+    "인물 정보 수집 중...",
+    "웹 검색을 통해 배경 조사 중...",
+    "금융 사고 방식 분석 중...",
+    "데이터 분석 접근법 평가 중...",
+    "답변 스타일 특성 파악 중...",
+    "핵심 투자 원칙 추출 중...",
+    "대표 어록 정리 중...",
+    "페르소나 프로필 구성 중...",
+    "최종 검증 및 저장 준비 중...",
+]
+
+
+def _build_persona_payload(persona) -> dict:
+    return {
+        "type": "result",
+        "name": persona.name,
+        "full_name": persona.full_name,
+        "summary": persona.summary,
+        "financial_mindset": persona.financial_mindset,
+        "data_analysis_approach": persona.data_analysis_approach,
+        "response_style": persona.response_style,
+        "key_principles": persona.key_principles,
+        "famous_quotes": getattr(persona, "famous_quotes", None),
+    }
 
 
 @app.post("/persona/")
 async def create_persona(request: PersonaRequest):
     info = (request.info or "").strip()
+    stream = request.stream
+
     if not info:
         return JSONResponse(status_code=400, content={"error": "info 필드가 비어 있습니다."})
 
-    try:
-        persona = make_persona(info)
-    except Exception as exc:
-        return JSONResponse(status_code=500, content={"error": str(exc)})
+    if not stream:
+        try:
+            persona = make_persona(info)
+        except Exception as exc:
+            return JSONResponse(status_code=500, content={"error": str(exc)})
 
-    if persona is None:
-        return JSONResponse(status_code=500, content={"error": "페르소나 생성에 실패했습니다."})
+        if persona is None:
+            return JSONResponse(status_code=500, content={"error": "페르소나 생성에 실패했습니다."})
 
-    return JSONResponse(content=persona.model_dump())
+        return JSONResponse(content=persona.model_dump())
+
+    def event_stream():
+        event_queue: Queue = Queue()
+
+        def status_sender():
+            import asyncio
+
+            async def send_status():
+                for i, message in enumerate(PERSONA_STATUS_MESSAGES[:-1]):  # 마지막 메시지는 완료 시점에 사용
+                    event_queue.put({"type": "status", "message": message})
+                    await asyncio.sleep(7)
+
+            # 비동기 이벤트 루프에서 실행
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(send_status())
+
+        def worker():
+            thread_id = threading.get_ident()
+            _stdout_proxy.register(thread_id, _QueueingStdoutTee(_stdout_proxy._target, event_queue))
+            try:
+                # status 메시지 전송 스레드 시작
+                status_thread = Thread(target=status_sender, daemon=True)
+                status_thread.start()
+
+                persona = make_persona(info)
+
+                if persona is None:
+                    event_queue.put({"type": "error", "message": "페르소나 생성에 실패했습니다."})
+                else:
+                    event_queue.put(_build_persona_payload(persona))
+            except Exception as exc:
+                event_queue.put({"type": "error", "message": str(exc)})
+            finally:
+                _stdout_proxy.unregister(thread_id)
+                event_queue.put({"type": "done"})
+
+        yield _sse({"type": "status", "message": "페르소나 생성 준비 중..."})
+        Thread(target=worker, daemon=True).start()
+
+        done = False
+        while not done:
+            try:
+                event = event_queue.get(timeout=0.2)
+            except Empty:
+                continue
+            yield _sse(jsonable_encoder(event))
+            if event.get("type") == "done":
+                done = True
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    }
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 class QueryRequest(BaseModel):
     query: str
