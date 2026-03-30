@@ -68,13 +68,13 @@ def save_persona_jsonl(persona, query, file_name=None):
 def print_persona(persona):
     print("\n[Persona 생성 결과]")
     print(f"- 이름: {persona.name}")
-    print(f"- 배경: {persona.background}")
+    print(f"- 요약: {persona.summary}")
     print(f"- 금융 사고 방식: {persona.financial_mindset}")
     print(f"- 데이터 분석 방식: {persona.data_analysis_approach}")
     print(f"- 답변 스타일: {persona.response_style}")
-    print(f"- 핵심 원칙: {', '.join(persona.key_principles)}")
+    print(f"- 핵심 원칙: {', '.join(persona.key_principles)}", flush=True)
     if getattr(persona, "famous_quotes", None):
-        print(f"- 어록: {', '.join(persona.famous_quotes)}")
+        print(f"- 어록: {', '.join(persona.famous_quotes)}", flush=True)
 
 
 def make_persona(info):

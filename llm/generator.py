@@ -62,7 +62,7 @@ def generate_news_info(client, user_query, intent):
 class Persona(BaseModel):
     name: str                        # 인물 이름
     full_name: str                   # 인물 이름
-    background: str                  # 인물 배경 (경력, 주요 업적 등)
+    summary: str                     # 인물 요약 (간단한 소개)
     financial_mindset: str           # 금융 사고 방식
     data_analysis_approach: str      # 데이터 분석 방식
     response_style: str              # 질문에 대한 답변 스타일
@@ -76,6 +76,7 @@ def generate_persona(client, user_query):
         "- full_name: 인물의 원문/정식 전체 이름.\n"
         "- name: 사용자가 이해하기 쉬운 표시 이름(한국어 통용명 우선, 없으면 간결한 영어).\n"
         "- 괄호 별칭/원문 병기는 full_name에만 포함하고 name에는 넣지 말 것.\n"
+        "- summary: 인물의 간단한 소개 요약 (2-3문장 정도로 간결하게).\n"
         "나머지 필드는 사실 기반으로 충실히 작성하시오."
     )
 
@@ -123,7 +124,7 @@ def build_full_prompt(user_query, context, intent, persona=None):
 
 [선택된 페르소나]
 이름: {persona.name}
-배경: {persona.background}
+요약: {persona.summary}
 금융 사고방식: {persona.financial_mindset}
 데이터 분석 방식: {persona.data_analysis_approach}
 답변 스타일: {persona.response_style}
