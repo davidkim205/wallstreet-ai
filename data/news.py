@@ -96,6 +96,7 @@ def search_google_news(keywords, language="ko", max_results=3):
             root = ET.fromstring(resp.text)
             
             items = root.findall('.//item')[:max_results]
+            print(f"[INFO] {keyword} 검색 중...")
             
             for item in tqdm(items, desc="[INFO] 기사 수집 진행", bar_format='{desc}: {n_fmt}/{total_fmt} [{elapsed}<{remaining}]'):
                 title = item.find('title').text
