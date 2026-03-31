@@ -73,9 +73,9 @@ def generate_persona(client, user_query):
     system_prompt = (
         "아래 금융 인물을 웹 검색으로 확인한 뒤 Persona 스키마에 맞춰 작성하시오.\n"
         "이름 규칙:\n"
-        "- full_name: 인물의 원문/정식 전체 이름.\n"
+        "- full_name: 인물의 가장 널리 사용되는 원문 이름 작성(legal name, middle name, suffix 모두 제외)\n"
         "- name: 사용자가 이해하기 쉬운 표시 이름(한국어 통용명 우선, 없으면 간결한 영어).\n"
-        "- 괄호 별칭/원문 병기는 full_name에만 포함하고 name에는 넣지 말 것.\n"
+        "- 괄호 별칭/원문 풀네임은 모두 제외할 것.\n"
         "- summary: 인물의 간단한 소개 요약 (2-3문장 정도로 간결하게).\n"
         "나머지 필드는 사실 기반으로 충실히 작성하시오."
     )
