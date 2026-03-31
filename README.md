@@ -1,109 +1,118 @@
 # Wallstreet-AI
 
-Wallstreet-AI는 투자 대가 페르소나와 Agentic AI 파이프라인을 결합해 가격, 펀더멘털, 실적, 뉴스, 기술지표를 해석하고 맞춤형 투자 인사이트를 제공하는 금융 분석 어시스턴트입니다.
+Wallstreet-AI is a financial analysis assistant that combines legendary investor personas with an agentic AI pipeline to interpret prices, fundamentals, earnings, news, and technical indicators, then provide tailored investment insights.
 
 ## Overview
 
-Wallstreet-AI는 사용자의 투자 질문을 실제 분석 파이프라인으로 전환하는 Agentic AI 기반 금융 분석 어시스턴트입니다. LLM이 질문에서 종목, 분석 유형, 기간, 실적 대상 연도·분기를 추출하면, 그 결과에 맞춰 가격 데이터, 펀더멘털, 기술지표, 실적 정보, 뉴스 컨텍스트를 선택적으로 수집하고 하나의 분석 입력으로 조립합니다.
+Wallstreet-AI is an agentic AI financial analysis assistant that turns user questions into a structured analysis workflow. When the LLM extracts the ticker, analysis type, time period, and target earnings year/quarter from a question, the system selectively gathers price data, fundamentals, technical indicators, earnings information, and news context to assemble a single analysis input.
 
-이후 OpenAI 기반 모델이 수집된 데이터를 바탕으로 일반 분석, 기술적 분석, 기본적 분석, 실적 분석, SWOT, 뉴스 요약, 비교 분석 등의 리포트를 생성합니다. 또한 워런 버핏 같은 금융 인물의 투자 철학을 반영한 페르소나를 적용할 수 있어, 같은 데이터라도 관점과 설명 방식이 달라지는 맞춤형 응답을 제공합니다.
+Then, an OpenAI-based model generates reports such as general, technical, fundamental, earnings, SWOT, news-summary, and comparative analyses from the collected data. It can also apply personas based on the investment philosophies of figures like Warren Buffett, so the perspective and explanation style can change even when the underlying data is the same.
 
-프로젝트는 단순 질의응답형 챗봇이 아니라 `인텐트 파싱 -> 도구 라우팅 -> 데이터 수집 -> 뉴스 보강 -> 컨텍스트 빌드 -> LLM 생성 -> 결과 저장/스트리밍`으로 이어지는 분석 시스템으로 설계되어 있습니다. CLI, FastAPI SSE API, Gradio UI를 함께 제공해 로컬 실험, 웹 인터페이스, 서비스 연동까지 동일한 코어 파이프라인을 재사용할 수 있습니다.
+Rather than being a simple Q&A chatbot, the project is designed as an analysis system that follows the flow of `intent parsing -> tool routing -> data collection -> news enrichment -> context building -> LLM generation -> result streaming and storage`. It provides a CLI, a FastAPI SSE API, and a Gradio UI so the same core pipeline can be reused for local experiments, web interfaces, and service integrations.
 
-프로젝트는 세 가지 진입점을 제공합니다.
+The project provides three entry points.
 
-- `pipeline.py`: CLI 기반 대화형 분석
-- `api_server.py`: FastAPI 분석 API 및 SSE 스트리밍 서버
-- `gradio_app.py`: Gradio 웹 UI
+- `pipeline.py`: CLI-based interactive analysis
+- `api_server.py`: FastAPI analysis API and SSE streaming server
+- `gradio_app.py`: Gradio web UI
 
-## 주요 기능
+## Key Features
 
-- 사용자 질문에서 티커, 분석 유형, 기간, 연도/분기 정보를 추출
-- 분석 유형별로 필요한 데이터 소스를 자동 선택
-- `yfinance` 기반 가격, 펀더멘털, 뉴스, 실적 데이터 수집
-- 기술적 지표(RSI, MACD, 이동평균, 볼린저 밴드) 계산
-- Google News RSS 기반 뉴스 본문 수집 및 요약 컨텍스트 생성
-- OpenAI Responses API를 통한 분석 리포트 생성 및 스트리밍 출력
-- 투자 대가 스타일의 페르소나 생성 및 적용
-- 분석 결과와 페르소나를 JSONL 파일로 저장
+- Extracts ticker symbols, analysis types, periods, and year/quarter information from user questions
+- Automatically selects the required data sources based on the analysis type
+- Collects price, fundamentals, news, and earnings data using `yfinance`
+- Calculates technical indicators such as RSI, MACD, moving averages, and Bollinger Bands
+- Collects article bodies from Google News RSS and builds news context
+- Generates analysis reports and streams responses through the OpenAI Responses API
+- Creates and applies investor-style personas
+- Stores analysis results and personas in JSONL files
 
-## 전체 동작 흐름
+## Overall Flow
 
 ```text
-사용자 질문
-  -> 인텐트 파싱
-  -> 도구 라우팅
-  -> 시장 데이터 수집
-  -> 뉴스 컨텍스트 생성
-  -> LLM 분석 생성
-  -> 결과 저장(JSONL)
+User question
+  -> Intent parsing
+  -> Tool routing
+  -> Market data collection
+  -> News context generation
+  -> LLM analysis generation
+  -> Result storage (JSONL)
 ```
+
 ## Demo
-주요 스크린샷
 
-## 빠른 실행
+![alt text](docs/assets/analyze.gif)
 
-로컬에서 가장 쉽게 확인하는 방법은 아래 순서입니다.
-1. 가상환경 생성
+Streaming stock analysis with pipeline progress and final results.
+
+
+![alt text](docs/assets/persona.gif)
+
+Persona generation and saving based on a financial figure.
+
+## Quick Start
+
+The easiest way to try it locally is to follow the steps below.
+
+1. Create a virtual environment
 
 ```bash
 uv venv
 source .venv/bin/activate
 ```
 
-2. 의존성 설치
+2. Install dependencies
 
 ```bash
 uv pip install -r requirements.txt
 ```
 
-3. 환경 변수 파일 준비
+3. Prepare the environment variable file
 
 ```bash
 cp .env.example .env
 ```
 
-4. FastAPI 서버 실행
+4. Run the FastAPI server
 
 ```bash
 uvicorn api_server:app --reload
 ```
 
-5. Gradio UI 실행
+5. Run the Gradio UI
 
 ```bash
 python gradio_app.py --api-url http://127.0.0.1:8000/analyze/
 ```
 
-6. 브라우저에서 UI에 접속해 질문 입력
+6. Open the UI in your browser and enter a question
 
-CLI만 빠르게 확인하려면 `.env` 설정 후 `python pipeline.py`만 실행해도 됩니다.
+If you only want to test the CLI, simply configure `.env` and run `python pipeline.py`.
 
+## Installation
 
-## 설치
+### 1. Prepare the Python environment
 
-### 1. Python 환경 준비
-
-Python 3.10 이상을 권장합니다.
+Python 3.10 or later is recommended.
 
 ```bash
 uv venv
 source .venv/bin/activate
 ```
 
-### 2. 의존성 설치
+### 2. Install dependencies
 
 ```bash
 uv pip install -r requirements.txt
 ```
 
-### 3. 환경 변수 설정
+### 3. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-기본 예시는 아래와 같습니다.
+A basic example is shown below.
 
 ```env
 LLM_MODEL_NAME=gpt-5-mini
@@ -112,93 +121,93 @@ LOG_FILE=analysis_results.jsonl
 PERSONA_FILE=persona.jsonl
 ```
 
-설명:
+Environment variables:
 
-- `LLM_MODEL_NAME`: OpenAI 호출에 사용할 모델명
-- `LLM_MODEL_API_KEY`: OpenAI API 키
-- `LOG_FILE`: 분석 결과 JSONL 저장 경로
-- `PERSONA_FILE`: 페르소나 JSONL 저장 경로
+- `LLM_MODEL_NAME`: The model name used for OpenAI calls
+- `LLM_MODEL_API_KEY`: Your OpenAI API key
+- `LOG_FILE`: Path for saving analysis results in JSONL format
+- `PERSONA_FILE`: Path for saving personas in JSONL format
 
-현재 코드 기준으로 OpenAI 클라이언트 인증에는 `LLM_MODEL_API_KEY`를 우선 사용하며, 값이 비어 있으면 OpenAI SDK의 기본 인증 환경을 사용합니다.
+In the current codebase, OpenAI client authentication uses `LLM_MODEL_API_KEY` first. If it is not set, it falls back to the OpenAI SDK's default authentication environment.
 
-## 실행 방법
+## How to Run
 
-### 1. CLI 실행
+### 1. Run the CLI
 
 ```bash
 python pipeline.py
 ```
 
-동작:
+Behavior:
 
-- 시작 시 저장된 페르소나 목록을 보여줍니다.
-- 원하는 페르소나 번호를 입력하거나 Enter로 기본 모드로 진행합니다.
-- 이후 질문을 입력하면 분석 결과와 수집 데이터 요약이 출력됩니다.
+- Shows the list of saved personas at startup
+- Lets you enter a persona number or press Enter to continue without a persona
+- After you enter a question, the analysis result and a summary of the collected data are printed
 
-종료 명령:
+Exit commands:
 
 - `exit`
 - `quit`
 - `종료`
 
-### 2. FastAPI 서버 실행
+### 2. Run the FastAPI server
 
 ```bash
 uvicorn api_server:app --reload
 ```
 
-기본 주소:
+Default address:
 
-- API 서버: `http://127.0.0.1:8000`
+- API server: `http://127.0.0.1:8000`
 
-제공 엔드포인트:
+Available endpoints:
 
-- `POST /analyze/`: 분석 실행
-- `POST /persona/`: 새 페르소나 생성
+- `POST /analyze/`: Run analysis
+- `POST /persona/`: Create a new persona
 
-### 3. Gradio UI 실행
+### 3. Run the Gradio UI
 
-먼저 FastAPI 서버를 실행한 뒤:
+First, run the FastAPI server, then:
 
 ```bash
 python gradio_app.py --api-url http://127.0.0.1:8000/analyze/
 ```
+By default, Gradio binds to `0.0.0.0:7860`.
 
-기본 주소:
 
-- Gradio UI: `http://0.0.0.0:7860`
+Options:
 
-옵션:
+- `--api-url`: The analysis SSE endpoint to connect to. The code defaults to `http://0.0.0.0:8000/analyze/`, but for local use it is better to set an explicit address such as `http://127.0.0.1:8000/analyze/`.
+- `--port`: Gradio port
+- `--server-name`: Binding address
+- `--share`: Generate a public link
 
-- `--api-url`: 연결할 분석 SSE 엔드포인트. 코드 기본값은 `http://0.0.0.0:8000/analyze/`이지만, 로컬 접속 시에는 `http://127.0.0.1:8000/analyze/`처럼 명시해서 실행하는 편이 안전합니다.
-- `--port`: Gradio 포트
-- `--server-name`: 바인딩 주소
-- `--share`: 공개 링크 생성
+The Gradio UI has three tabs.
 
-Gradio UI에는 두 개의 탭이 있습니다.
+- `Ask a Question`: Submit analysis requests, view streaming responses, and display progress metadata
+- `Create a Persona`: Create and save personas based on financial figures
+- `Investor Profile`: Browse saved investor profiles and personas
 
-- `질문하기`: 분석 요청, 스트리밍 응답, 진행 메타데이터 표시
-- `페르소나 만들기`: 금융 인물 기반 페르소나 생성 및 저장
 
-## API 사용 예시
+## API Usage Examples
 
-### 1. 분석 API
+### 1. Analysis API
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze/" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "AAPL의 최근 실적과 투자 포인트 요약해줘",
+    "query": "Summarize AAPL's recent earnings and key investment points",
     "stream": false
   }'
 ```
 
-응답 예시:
+Example response:
 
 ```json
 {
   "type": "result",
-  "query": "AAPL의 최근 실적과 투자 포인트 요약해줘",
+  "query": "Summarize AAPL's recent earnings and key investment points",
   "ticker": "AAPL",
   "analysis_type": "earnings",
   "data_context": {},
@@ -208,70 +217,103 @@ curl -X POST "http://127.0.0.1:8000/analyze/" \
 }
 ```
 
-#### 페르소나 지정 요청
+Streaming request example:
+
+```bash
+curl -N -X POST "http://127.0.0.1:8000/analyze/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Summarize AAPL'\''s recent earnings and key investment points",
+    "stream": true
+  }'
+```
+
+Example SSE event flow:
+
+```text
+data: {"type":"status","message":"인텐트 분석 중..."}
+
+data: {"type":"stdout","message":"[③] 데이터 수집 중 (ticker=AAPL, period=1y)..."}
+
+data: {"type":"delta","delta":"애플의 최근 실적은 마진 개선 흐름을 보여주며 ..."}
+
+data: {"type":"result","ticker":"AAPL","analysis_type":"earnings", ...}
+
+data: {"type":"done"}
+```
+
+Notes:
+
+- `status`: High-level pipeline progress updates
+- `stdout`: Server-side logs emitted during analysis
+- `delta`: Incremental response chunks from the model
+- `result`: Final analysis payload, same as the `stream: false` response
+- `done`: Indicates that the stream has finished
+
+#### Request with a persona
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze/" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "삼성전자 SWOT 분석",
+    "query": "SWOT analysis of Samsung Electronics",
     "stream": false,
-    "persona_name": "워렌 버핏"
+    "persona_name": "Warren Buffett"
   }'
 ```
 
-### 2. 페르소나 생성 API
+### 2. Persona Creation API
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/persona/" \
   -H "Content-Type: application/json" \
   -d '{
-    "info": "워렌 버핏"
+    "info": "Warren Buffett"
   }'
 ```
 
-## 페르소나 시스템
+## Persona System
 
-이 프로젝트는 분석 스타일을 바꿀 수 있는 페르소나 기능을 제공합니다.
+This project includes a persona system that changes the tone and style of the analysis.
 
 - `persona/make_persona.py`
-  입력된 인물 정보를 바탕으로 OpenAI + 웹 검색을 통해 페르소나를 생성합니다.
+  Creates a persona from input figure information using OpenAI + web search.
 - `persona/persona_loader.py`
-  `persona.jsonl`에서 페르소나를 읽어옵니다.
+  Loads personas from `persona.jsonl`.
 - `gradio_app.py`
-  드롭다운으로 기존 페르소나를 선택하거나 새로 생성할 수 있습니다.
+  Lets users select an existing persona from a dropdown or create a new one.
 
-페르소나가 적용되면 다음 요소가 분석 프롬프트에 추가됩니다.
+When a persona is applied, the following elements are added to the analysis prompt.
 
-- 인물 배경
-- 금융 사고방식
-- 데이터 분석 방식
-- 답변 스타일
-- 핵심 원칙
-- 대표 어록
+- Summary of the figure
+- Financial mindset
+- Data analysis style
+- Response style
+- Core principles
+- Representative quotes
 
-## 데이터 소스
+## Data Sources
 
 - OpenAI API
-  인텐트 파싱, 분석 생성, 페르소나 생성
+  Used for intent parsing, analysis generation, and persona generation
 - `yfinance`
-  가격, 펀더멘털, 종목 뉴스, 재무/실적 데이터
+  Used for price, fundamentals, stock news, financial data, and earnings data
 - Google News RSS
-  최신 뉴스 검색
+  Used to search for recent news
 - `trafilatura`
-  기사 본문 추출
+  Used to extract article bodies
 
-## 결과 저장
+## Result Storage
 
-### 분석 결과 로그
+### Analysis result logs
 
-`pipeline.py`는 분석 결과를 JSONL 형식으로 저장합니다.
+`pipeline.py` stores analysis results in JSONL format.
 
-- 코드 내 기본값: `log_file.jsonl`
-- `.env.example` 예시값: `analysis_results.jsonl`
-- 환경 변수 `LOG_FILE`로 변경 가능
+- Default in code: `log_file.jsonl`
+- Example in `.env.example`: `analysis_results.jsonl`
+- Configurable via the `LOG_FILE` environment variable
 
-저장 항목:
+Stored fields:
 
 - `timestamp`
 - `query`
@@ -280,15 +322,15 @@ curl -X POST "http://127.0.0.1:8000/persona/" \
 - `data_context`
 - `llm_response`
 
-### 페르소나 저장
+### Persona storage
 
-생성한 페르소나는 JSONL 형식으로 저장됩니다.
+Created personas are stored in JSONL format.
 
-- 기본 파일: `persona.jsonl`
-- 환경 변수로 변경 가능: `PERSONA_FILE`
+- Default file: `persona.jsonl`
+- Can be changed via environment variable: `PERSONA_FILE`
 
-동일한 `name`이 이미 있으면 중복 저장하지 않습니다.
+Duplicate entries with the same `name` are skipped.
 
-## 라이선스
+## License
 
-이 저장소는 [LICENSE](LICENSE) 파일을 따릅니다.
+See [LICENSE](LICENSE) for details.
