@@ -1150,37 +1150,46 @@ def save_persona_edits(
     response_style,
     key_principles_text,
     famous_quotes_text,
-    image_path=""  # ✅ 변경
+    image_path=""
 ) -> str:
 
     if not original_name or original_name == "없음":
         return "Select a persona to save."
 
     try:
-        personas = _parse_personas()
+        # raw dict로 읽어서 saved_at, query 등 extra 필드 보존
+        raw_lines = []
+        if PERSONA_FILE.exists():
+            with PERSONA_FILE.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw_lines.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
         updated = False
         new_lines = []
 
-        for p in personas:
-            if p.name.strip() == original_name:
-                d = _persona_to_dict(p)
-
-                # 🔥 핵심: image_path 직접 저장
-                d["image_path"] = image_path.strip() or d.get("image_path")
-
-                d["name"]                   = new_name.strip() or d["name"]
-                d["full_name"]              = full_name.strip() or d["full_name"]
+        for d in raw_lines:
+            if d.get("name", "").strip() == original_name:
+                # extra 필드(saved_at, query 등)는 그대로 두고 편집 필드만 덮어쓰기
+                d["name"]                   = new_name.strip() or d.get("name", "")
+                d["full_name"]              = full_name.strip() or d.get("full_name", "")
                 d["summary"]                = summary.strip()
                 d["financial_mindset"]      = financial_mindset.strip()
                 d["data_analysis_approach"] = data_analysis_approach.strip()
                 d["response_style"]         = response_style.strip()
                 d["key_principles"]         = [x.strip() for x in key_principles_text.split("\n") if x.strip()]
                 d["famous_quotes"]          = [x.strip() for x in famous_quotes_text.split("\n") if x.strip()] or None
-
+                if image_path.strip():
+                    d["image_path"]         = image_path.strip()
                 new_lines.append(json.dumps(d, ensure_ascii=False))
                 updated = True
             else:
-                new_lines.append(json.dumps(_persona_to_dict(p), ensure_ascii=False))
+                new_lines.append(json.dumps(d, ensure_ascii=False))
 
         if not updated:
             return "No corresponding persona found."
