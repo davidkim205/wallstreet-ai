@@ -1129,9 +1129,8 @@ HEADER_HTML = """
 <div id="ws-header">
   <h1>📈 Wallstreet AI</h1>
   <p>
-    <span class="ws-badge">Agentic AI</span>
-    Intent parsing · Tool routing · Data collection · LLM generation &mdash;
-    Financial analysis assistant powered by investor personas
+    Financial analysis assistant combining legendary investor personas with
+    prices, fundamentals, earnings, news, and technical indicators
   </p>
 </div>
 """
