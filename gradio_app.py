@@ -1,6 +1,5 @@
 import argparse
 import base64
-import hashlib
 import html as html_lib
 import json
 import os
@@ -23,6 +22,9 @@ DEFAULT_ENDPOINT = os.environ.get("API_ENDPOINT", "http://127.0.0.1:8000/analyze
 IMAGE_CACHE_DIR = Path(".persona_images")
 IMAGE_CACHE_DIR.mkdir(exist_ok=True)
 
+LOCAL_IMAGE_DIR = Path(os.environ.get("LOCAL_IMAGE_DIR", Path(__file__).parent / "persona_images"))
+DEFAULT_IMAGE_FILENAME = "default.png"
+
 _openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 EXAMPLES_BY_TYPE = {
@@ -35,18 +37,6 @@ EXAMPLES_BY_TYPE = {
     "swot":         "OpenAI 경쟁력 분석해 주세요",
     "general":      "Tesla(TSLA) 어떻게 보시나요?",
     "watchlist":    "내 관심종목(삼성전자, SK하이닉스, Apple, Microsoft, Tesla) 현황 봐주세요",
-}
-
-ANALYSIS_TYPE_LABELS = {
-    "screener":     "스크리너",
-    "technical":    "기술적 분석",
-    "fundamental":  "기본적 분석",
-    "news_summary": "뉴스 요약",
-    "comparison":   "비교 분석",
-    "earnings":     "실적 분석",
-    "swot":         "SWOT 분석",
-    "general":      "일반 질문",
-    "watchlist":    "관심종목",
 }
 
 EXAMPLE_QUERIES = list(EXAMPLES_BY_TYPE.values())
@@ -84,7 +74,6 @@ def _make_elapsed():
     t0 = time.time()
     return lambda: f"{time.time()-t0:.1f}초"
 
-# 마크다운 링크·URL 제거
 _PAREN_MD = re.compile(r'\s*\(\s*\[[^\]]*\]\([^)]*\)\s*\)')
 _MD_LINK  = re.compile(r'\[([^\]]*)\]\([^)]*\)')
 _PAREN_URL= re.compile(r'\s*\(https?://[^\)]*\)')
@@ -118,8 +107,6 @@ def _status_icon(msg):
     return "⏳"
 
 
-
-
 # ─────────────────────────────────────────────────────────────
 # 페르소나 모델 & 파일 IO
 # ─────────────────────────────────────────────────────────────
@@ -132,13 +119,8 @@ class PersonaLine(BaseModel):
     response_style: str
     key_principles: list[str]
     famous_quotes: list[str] | None = None
-    birth_year: str | None = None
-    nationality: str | None = None
-    net_worth: str | None = None
-    company: str | None = None
-    title: str | None = None
-    investment_style: str | None = None
-    notable_trades: list[str] | None = None
+    image_path: str | None = None
+    
 
 
 _persona_cache: list = []
@@ -169,7 +151,6 @@ def _parse_personas():
                         continue
                     if not data.get("full_name"):
                         data["full_name"] = data.get("name", "")
-                    # 호환성: background 필드가 있으면 summary로 복사
                     if "background" in data and "summary" not in data:
                         data["summary"] = data["background"]
                     personas.append(PersonaLine(**data))
@@ -195,10 +176,8 @@ def load_persona_summary(name):
         return ""
     for p in _parse_personas():
         if p.name.strip() == name:
-            title_str = f" · {p.title}" if p.title else ""
-            company_str = f" ({p.company})" if p.company else ""
-            summary = (p.financial_mindset[:80] + "…") if len(p.financial_mindset) > 80 else p.financial_mindset
-            return f"**{p.full_name}**{title_str}{company_str}\n\n{summary}"
+            summary = (p.summary[:80] + "…") if len(p.summary) > 80 else p.summary
+            return f"**{p.full_name}**\n\n{summary}"
     return ""
 
 
@@ -219,240 +198,95 @@ def _initials(name):
 def _avatar_color(name):
     return _AVATAR_COLORS[sum(ord(c) for c in name) % len(_AVATAR_COLORS)]
 
-def build_profile_html(p: PersonaLine):
-    bg, fg = _avatar_color(p.full_name)
-    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-  <defs><linearGradient id="ag" x1="0" y1="0" x2="1" y2="1">
-    <stop offset="0%" stop-color="{bg}"/><stop offset="100%" stop-color="{bg}cc"/>
-  </linearGradient></defs>
-  <circle cx="60" cy="60" r="60" fill="#dbe5e2"/>
-  <circle cx="60" cy="60" r="58" fill="url(#ag)"/>
-  <ellipse cx="60" cy="48" rx="18" ry="20" fill="{fg}55"/>
-  <ellipse cx="60" cy="90" rx="30" ry="22" fill="{fg}44"/>
-  <circle cx="60" cy="60" r="58" fill="none" stroke="{fg}66" stroke-width="2"/>
-</svg>"""
-    meta_rows = []
-    for label, val in [
-        ("출생", p.birth_year), ("국적", p.nationality), ("소속", p.company),
-        ("직책", p.title), ("자산 규모", p.net_worth), ("투자 스타일", p.investment_style),
-    ]:
-        if val:
-            meta_rows.append(f'<div class="pf-meta-row"><span class="pf-meta-label">{_safe(label)}</span>'
-                             f'<span class="pf-meta-val">{_safe(val)}</span></div>')
-    principles = "".join(f"<li>{_safe(x)}</li>" for x in (p.key_principles or []))
-    quotes = "".join(f'<blockquote class="pf-quote">&#8220;{_safe(q)}&#8221;</blockquote>' for q in (p.famous_quotes or []))
-    trades = "".join(f'<div class="pf-trade-item">▸ {_safe(t)}</div>' for t in (p.notable_trades or []))
+def build_profile_html(p: PersonaLine, img_html: str = ""):
+    if img_html:
+        avatar = f'<div class="pf-avatar">{img_html}</div>'
+    else:
+        bg, fg = _avatar_color(p.full_name)
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">'
+            f'<circle cx="50" cy="50" r="50" fill="{bg}"/>'
+            f'<ellipse cx="50" cy="38" rx="16" ry="17" fill="{fg}66"/>'
+            f'<ellipse cx="50" cy="76" rx="26" ry="18" fill="{fg}55"/>'
+            f'</svg>'
+        )
+        avatar = f'<div class="pf-avatar">{svg}</div>'
+
+    def section(title, content, extra_class=""):
+        cls = f'pf-section {extra_class}'.strip()
+        return f'<div class="{cls}"><p class="pf-section-title">{title}</p><div class="pf-section-body">{content}</div></div>'
+
+    principles_html = (
+        '<ul class="pf-list">'
+        + "".join(f'<li>{_safe(x)}</li>' for x in (p.key_principles or []))
+        + '</ul>'
+    ) if p.key_principles else ""
+
+    quotes_html = (
+        '<div class="pf-quotes">'
+        + "".join(f'<blockquote class="pf-quote">&#8220;{_safe(q)}&#8221;</blockquote>' for q in (p.famous_quotes or []))
+        + '</div>'
+    ) if p.famous_quotes else ""
+
+    sections = f"""
+<div class="pf-grid">
+    <div class="pf-left">
+        {section("💡 Financial Mindset", f'<p class="pf-text">{_safe(p.financial_mindset)}</p>', "pf-left-section")}
+        {section("📊 Data Analysis Approach", f'<p class="pf-text">{_safe(p.data_analysis_approach)}</p>', "pf-left-section")}
+        {section("🗣 Response Style", f'<p class="pf-text">{_safe(p.response_style)}</p>', "pf-left-section")}
+    </div>
+    <div class="pf-right">
+        {section("📌 Key Principles", principles_html, "pf-right-section") if principles_html else ""}
+    </div>
+</div>
+
+<div class="pf-bottom">
+    {section("💬 Famous Quotes", quotes_html, "full") if quotes_html else ""}
+</div>
+"""
 
     return f"""<div class="pf-card">
-  <div class="pf-header">
-    <div class="pf-avatar">{svg}</div>
-    <div class="pf-header-info">
+  <div class="pf-banner"><div class="pf-banner-pattern"></div></div>
+  <div class="pf-identity">
+    {avatar}
+    <div class="pf-identity-info">
       <h2 class="pf-name">{_safe(p.full_name)}</h2>
-      <p class="pf-subtitle">{_safe(p.title or "")}{("&nbsp;·&nbsp;" + _safe(p.company)) if p.company else ""}</p>
-      <p class="pf-bg">{_safe(p.summary)}</p>
     </div>
   </div>
-  {('<div class="pf-meta-grid">' + "".join(meta_rows) + '</div>') if meta_rows else ''}
-  <div class="pf-section"><h3 class="pf-section-title">💡 투자 철학</h3><p class="pf-text">{_safe(p.financial_mindset)}</p></div>
-  <div class="pf-section"><h3 class="pf-section-title">📊 데이터 분석 방식</h3><p class="pf-text">{_safe(p.data_analysis_approach)}</p></div>
-  <div class="pf-section"><h3 class="pf-section-title">🗣 답변 스타일</h3><p class="pf-text">{_safe(p.response_style)}</p></div>
-  {('<div class="pf-section"><h3 class="pf-section-title">📌 핵심 원칙</h3><ul class="pf-list">' + principles + '</ul></div>') if principles else ''}
-  {('<div class="pf-section"><h3 class="pf-section-title">📁 주요 투자 사례</h3><div class="pf-trades">' + trades + '</div></div>') if trades else ''}
-  {('<div class="pf-section">' + quotes + '</div>') if quotes else ''}
+  <div class="pf-body">
+    {f'<p class="pf-summary">{_safe(p.summary)}</p>' if p.summary else ''}
+    <div class="pf-sections">{sections}</div>
+  </div>
 </div>"""
 
-def get_profile_html(name):
-    if not name or name == "없음":
-        return '<p class="pf-empty">왼쪽에서 투자자를 선택하세요.</p>'
-    for p in _parse_personas():
-        if p.name.strip() == name:
-            return build_profile_html(p)
-    return '<p class="pf-empty">해당 페르소나 정보를 찾을 수 없습니다.</p>'
-
 
 # ─────────────────────────────────────────────────────────────
-# Wikipedia 인물 사진 (캐시 포함)
+# 로컬 인물 이미지 — persona.jsonl의 image_path만 사용
 # ─────────────────────────────────────────────────────────────
-def _image_cache_path(full_name: str) -> Path:
-    key = hashlib.md5(full_name.encode()).hexdigest()
-    return IMAGE_CACHE_DIR / f"{key}.b64"
+def _load_local_image_b64(image_path: str) -> str:
+    def _to_b64(path: Path) -> str:
+        with open(path, "rb") as f:
+            data = base64.b64encode(f.read()).decode()
+        suffix = path.suffix.lower().lstrip(".")
+        mime = "jpeg" if suffix in ("jpg", "jpeg") else suffix
+        return f"data:image/{mime};base64,{data}"
 
+    if image_path:
+        candidate = Path(image_path)  
+        if candidate.exists():
+            return _to_b64(candidate)
 
-def _extract_english_name(full_name: str) -> str:
-    """full_name에서 영어 이름을 추출. 괄호 안 영어가 있으면 그것을 우선 사용."""
-    paren_match = re.search(r'\(([A-Za-z][^)]+)\)', full_name)
-    if paren_match:
-        return paren_match.group(1).strip()
-    ascii_part = re.sub(r'[^\x00-\x7F]+', '', full_name).strip()
-    return ascii_part if ascii_part else full_name
-
-
-def _extract_english_keywords(text: str) -> str:
-    """한국어 텍스트에서 영어 단어/고유명사만 추출."""
-    words = re.findall(r'[A-Za-z][A-Za-z\s&.]{2,}', text)
-    # 짧거나 일반적인 단어 제거
-    stopwords = {"the", "and", "for", "with", "from", "that", "this", "are", "was", "has"}
-    result = []
-    for w in words:
-        w = w.strip()
-        if w.lower() not in stopwords and len(w) > 3:
-            result.append(w)
-        if len(result) >= 3:
-            break
-    return " ".join(result)
-
-def _translate_to_english_name(name: str) -> str:
-    """OpenAI를 사용해 가장 가능성 높은 영어 Wikipedia 이름으로 변환"""
-    try:
-        resp = _openai_client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[
-                {"role": "system", "content": "Convert a person's name into the most likely English Wikipedia page title. Only output the name."},
-                {"role": "user", "content": name}
-            ],
-            temperature=0
-        )
-        return resp.choices[0].message.content.strip()
-    except Exception:
-        return name
-def _wikidata_image(name: str) -> str:
-    """Wikidata에서 이미지 가져오기 (fallback)"""
-    try:
-        url = "https://www.wikidata.org/w/api.php"
-        params = {
-            "action": "wbsearchentities",
-            "search": name,
-            "language": "en",
-            "format": "json",
-            "limit": 1
-        }
-        r = requests.get(url, params=params, timeout=10).json()
-        if not r.get("search"):
-            return ""
-
-        entity_id = r["search"][0]["id"]
-
-        entity_url = f"https://www.wikidata.org/wiki/Special:EntityData/{entity_id}.json"
-        data = requests.get(entity_url, timeout=10).json()
-
-        claims = data["entities"][entity_id].get("claims", {})
-        if "P18" in claims:
-            filename = claims["P18"][0]["mainsnak"]["datavalue"]["value"]
-            return f"https://commons.wikimedia.org/wiki/Special:FilePath/{filename}"
-
-    except Exception:
-        pass
-
-    return ""    
-def _wikipedia_search_image(query: str, headers: dict) -> str:
-    """Wikipedia search API로 쿼리에 맞는 첫 번째 인물 사진을 반환."""
-    import urllib.parse
-    search_url = (
-        "https://en.wikipedia.org/w/api.php"
-        f"?action=query&list=search&srsearch={urllib.parse.quote(query)}"
-        "&srnamespace=0&srlimit=1&format=json"
-    )
-    resp = requests.get(search_url, headers=headers, timeout=10)
-    resp.raise_for_status()
-    results = resp.json().get("query", {}).get("search", [])
-    if not results:
-        return ""
-    page_title = results[0]["title"]
-    img_url = (
-        "https://en.wikipedia.org/w/api.php"
-        f"?action=query&titles={urllib.parse.quote(page_title)}"
-        "&prop=pageimages&format=json&pithumbsize=500"
-    )
-    resp2 = requests.get(img_url, headers=headers, timeout=10)
-    resp2.raise_for_status()
-    pages = resp2.json().get("query", {}).get("pages", {})
-    for page in pages.values():
-        thumb = page.get("thumbnail", {}).get("source")
-        if thumb:
-            return thumb
-    return ""
-
-def _fetch_from_multi_wiki(name):
-    langs = ["en", "ko", "ja"]
-
-    for lang in langs:
-        try:
-            url = (
-                f"https://{lang}.wikipedia.org/w/api.php"
-                f"?action=query&titles={name}"
-                "&prop=pageimages&format=json&pithumbsize=500"
-            )
-            r = requests.get(url, timeout=8).json()
-            pages = r.get("query", {}).get("pages", {})
-            for page in pages.values():
-                if page.get("thumbnail"):
-                    return page["thumbnail"]["source"]
-        except:
-            continue
-    return ""
-
-def _fetch_wikipedia_image(full_name, summary=None):
-
-    # 1. Wikidata (가장 강력)
-    img = _wikidata_image(full_name)
-    if img:
-        return img
-
-    # 2. 다국어 wiki
-    img = _fetch_from_multi_wiki(full_name)
-    if img:
-        return img
-
-    # 3. 영어 이름 variants
-    queries = [
-    full_name,
-    _extract_english_name(full_name),
-    _translate_to_english_name(full_name),
-    ]
-
-    if summary:
-        queries.append(_extract_english_keywords(summary))
-        
-    for q in queries:
-        headers = {"User-Agent": "Mozilla/5.0"}
-
-        img = _wikipedia_search_image(q, headers)
-        if img:
-            return img
+    # 2순위: default.png 폴백
+    default = LOCAL_IMAGE_DIR / DEFAULT_IMAGE_FILENAME
+    if default.exists():
+        return _to_b64(default)
 
     return ""
-
-def generate_persona_image(name: str) -> str:
-    """투자자 이름으로 Wikipedia 실제 사진을 가져와 base64 data-URL을 반환."""
-    if not name or name == "없음":
-        return ""
-
-    persona = None
-    for p in _parse_personas():
-        if p.name.strip() == name:
-            persona = p
-            break
-    if persona is None:
-        return ""
-
-    cache_path = _image_cache_path(persona.full_name)
-    if cache_path.exists():
-        return cache_path.read_text()
-
-    try:
-        data_url = _fetch_wikipedia_image(persona.full_name, persona.summary)
-        if data_url:
-            cache_path.write_text(data_url)
-            return data_url
-        return ""
-    except Exception as e:
-        return f"__error__{e}"
 
 
 def build_profile_html_with_image(name: str) -> str:
-    """이미지 생성 후 프로필 HTML을 반환 (버튼 클릭용)."""
     if not name or name == "없음":
-        return '<p class="pf-empty">왼쪽에서 투자자를 선택하세요.</p>'
+        return '<div class="pf-placeholder"><span>👤</span><p>Select an Investor Persona</p></div>'
 
     persona = None
     for p in _parse_personas():
@@ -460,30 +294,21 @@ def build_profile_html_with_image(name: str) -> str:
             persona = p
             break
     if persona is None:
-        return '<p class="pf-empty">해당 페르소나 정보를 찾을 수 없습니다.</p>'
+        return '<div class="pf-placeholder"><span>🔍</span><p>Unable to find the selected persona</p></div>'
 
-    data_url = generate_persona_image(name)
-    if data_url and not data_url.startswith("__error__"):
-        img_html = f'<img src="{data_url}" style="width:120px;height:120px;border-radius:50%;object-fit:cover;border:2px solid #ccc">'
-    else:
-        img_html = None  # 실패 시 기본 SVG 아바타 유지
+    # persona.jsonl의 image_path만 사용
+    data_url = _load_local_image_b64(persona.image_path or "")
+    img_html = (
+        f'<img src="{data_url}" style="width:100px;height:100px;object-fit:cover;display:block;">'
+    ) if data_url else ""
 
-    html = build_profile_html(persona)
-    if img_html:
-        html = re.sub(
-            r'<div class="pf-avatar">.*?</div>',
-            f'<div class="pf-avatar">{img_html}</div>',
-            html,
-            flags=re.DOTALL,
-        )
-    return html
+    return build_profile_html(persona, img_html=img_html)
 
 
 # ─────────────────────────────────────────────────────────────
 # 스트림 분석 (핵심 로직)
 # ─────────────────────────────────────────────────────────────
 def _make_log_html(log_lines):
-    """log_lines: list of (type, text)"""
     if not log_lines:
         return ''
     rows = []
@@ -504,67 +329,187 @@ def _make_log_html(log_lines):
 def _wrap_log(inner):
     return (
         '<div id="output-panel" class="phase-log">'
-        '<div class="panel-header"><span class="panel-title">진행 과정</span></div>'
+        '<div class="panel-header"><span class="panel-title">Progress</span></div>'
         '<div id="log-scroll">' + inner + '</div>'
         '</div>'
     )
 
 
-def _wrap_answer(md_html, timer_str):
+def _wrap_answer(log_html, md_html, timer_str):
+    log_section = (
+        '<details class="result-log-section">'
+        '<summary class="result-log-header">Progress <span class="log-toggle-hint">Click to show/hide</span></summary>'
+        '<div class="result-log-body">' + log_html + '</div>'
+        '</details>'
+    ) if log_html else ''
+
+    answer_section = (
+        '<div class="result-answer-section">'
+        '<div class="result-answer-header">'
+        '<span class="result-answer-badge">&#128203; Final results</span>'
+        f'<span class="panel-timer">{html_lib.escape(timer_str)}</span>'
+        '</div>'
+        '<div id="answer-scroll" class="md-body">' + md_html + '</div>'
+        '</div>'
+    )
+
     return (
         '<div id="output-panel" class="phase-answer">'
-        '<div class="panel-header"><span class="panel-title">분석 결과</span>'
-        f'<span class="panel-timer">{html_lib.escape(timer_str)}</span></div>'
-        '<div id="answer-scroll" class="md-body">' + md_html + '</div>'
+        '<div class="panel-header">'
+        '<span class="panel-title">Analysis results</span>'
+        f'<span class="panel-timer">{html_lib.escape(timer_str)}</span>'
+        '</div>'
+        '<div id="answer-scroll-wrap">'
+        + log_section
+        + answer_section
+        + '</div>'
         '</div>'
     )
 
 
 def _md_to_html(text):
-    """마크다운 텍스트를 간단한 HTML로 변환 (Gradio Markdown 렌더러 대신)."""
     import re as _re
-    t = html_lib.escape(text)
-    # 헤더
-    t = _re.sub(r'(?m)^#### (.+)$', r'<h4>\1</h4>', t)
-    t = _re.sub(r'(?m)^### (.+)$',  r'<h3>\1</h3>', t)
-    t = _re.sub(r'(?m)^## (.+)$',   r'<h2>\1</h2>', t)
-    t = _re.sub(r'(?m)^# (.+)$',    r'<h1>\1</h1>', t)
-    # bold / italic
-    t = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', t)
-    t = _re.sub(r'\*(.+?)\*',      r'<em>\1</em>', t)
-    # 인라인 코드
-    t = _re.sub(r'`(.+?)`', r'<code>\1</code>', t)
-    # 리스트
-    t = _re.sub(r'(?m)^- (.+)$',    r'<li>\1</li>', t)
-    t = _re.sub(r'(?m)^\d+\. (.+)$',r'<li>\1</li>', t)
-    # 줄바꿈
-    t = t.replace('\n\n', '</p><p>')
-    t = t.replace('\n',   '<br>')
-    return '<p>' + t + '</p>'
+
+    _URL_RE = _re.compile(r'https?://[^\s,，、\)）\]】]+')
+
+    def _url_badge(url: str) -> str:
+        clean = url.rstrip('.,;:')
+        m = _re.match(r'https?://(?:www\.)?([^/\s]+)', clean)
+        label = m.group(1) if m else clean
+        esc = html_lib.escape(clean)
+        return f'<a href="{esc}" target="_blank" class="md-link">🔗 {html_lib.escape(label)}</a>'
+
+    def _clean_source_line(s: str) -> str:
+        s = _re.sub(r'\s*[—–-]{1,2}\s*(https?://)', r' \1', s)
+        return s
+
+    def process_inline(s: str) -> str:
+        s = _clean_source_line(s)
+        parts = []
+        last = 0
+        for m in _URL_RE.finditer(s):
+            before = s[last:m.start()]
+            before = html_lib.escape(before)
+            before = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', before)
+            before = _re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', before)
+            before = _re.sub(r'`(.+?)`', r'<code>\1</code>', before)
+            parts.append(before)
+            parts.append(_url_badge(m.group(0)))
+            last = m.end()
+        tail = html_lib.escape(s[last:])
+        tail = _re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', tail)
+        tail = _re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<em>\1</em>', tail)
+        tail = _re.sub(r'`(.+?)`', r'<code>\1</code>', tail)
+        parts.append(tail)
+        return ''.join(parts)
+
+    BULLET_RE = _re.compile(
+        r'^([ \t]*)'
+        r'(\d+[.)]\s+|[-•·○◦▸▹*]\s+)'
+        r'(.+)$'
+    )
+    HEADER_RE = _re.compile(r'^(#{1,4})\s+(.+)$')
+
+    def indent_level(spaces: str) -> int:
+        n = spaces.count('\t') * 4 + spaces.count(' ')
+        return n // 2
+
+    lines = text.split('\n')
+    out: list[str] = []
+    list_stack: list[tuple[int, str]] = []
+    para_lines: list[str] = []
+
+    def flush_para():
+        if para_lines:
+            out.append('<p>' + process_inline(' '.join(para_lines)) + '</p>')
+            para_lines.clear()
+
+    def open_list(depth: int, tag: str):
+        while list_stack and list_stack[-1][0] > depth:
+            _, t = list_stack.pop()
+            out.append(f'</{t}>')
+        if list_stack and list_stack[-1][0] == depth:
+            if list_stack[-1][1] != tag:
+                _, t = list_stack.pop()
+                out.append(f'</{t}>')
+                out.append(f'<{tag}>')
+                list_stack.append((depth, tag))
+        else:
+            out.append(f'<{tag}>')
+            list_stack.append((depth, tag))
+
+    def close_all_lists():
+        while list_stack:
+            _, t = list_stack.pop()
+            out.append(f'</{t}>')
+
+    for line in lines:
+        stripped = line.strip()
+
+        if not stripped:
+            flush_para()
+            close_all_lists()
+            continue
+
+        mh = HEADER_RE.match(stripped)
+        if mh:
+            flush_para(); close_all_lists()
+            level = min(len(mh.group(1)), 4)
+            out.append(f'<h{level}>{process_inline(mh.group(2))}</h{level}>')
+            continue
+
+        if _URL_RE.fullmatch(stripped):
+            flush_para()
+            badge = _url_badge(stripped)
+            if list_stack:
+                out.append(f'<li class="md-link-item">{badge}</li>')
+            else:
+                out.append(f'<p class="md-link-p">{badge}</p>')
+            continue
+
+        mb = BULLET_RE.match(line)
+        if mb:
+            flush_para()
+            spaces  = mb.group(1)
+            marker  = mb.group(2)
+            content = mb.group(3).strip()
+            depth   = indent_level(spaces)
+            is_ordered = bool(_re.match(r'\d+', marker.strip()))
+            tag = 'ol' if is_ordered else 'ul'
+            open_list(depth, tag)
+
+            if is_ordered:
+                num = int(_re.match(r'(\d+)', marker.strip()).group(1))
+                out.append(f'<li value="{num}">{process_inline(content)}</li>')
+            else:
+                out.append(f'<li>{process_inline(content)}</li>')
+            continue
+
+        close_all_lists()
+        para_lines.append(stripped)
+
+    flush_para()
+    close_all_lists()
+    return '\n'.join(out)
 
 
 IDLE_PANEL = (
     '<div id="output-panel" class="phase-idle">'
-    '<div class="idle-msg">🔍 왼쪽에서 질문을 입력하고 질문하기를 누르세요.</div>'
+    '<div class="idle-msg">🔍 Enter your question on the left and click Ask a Question..</div>'
     '</div>'
 )
 
 
 def stream_analyze(query, persona_name, endpoint):
-    """
-    Yields: (panel_html, timer_md, result_json)
-    - delta 전: panel_html = 진행 과정 로그 HTML
-    - delta 후: panel_html = 분석 결과 HTML (누적)
-    """
     query = (query or "").strip()
     endpoint = (endpoint or "").strip()
     persona_name = (persona_name or "").strip()
 
     if not query:
-        yield (_wrap_log('<div class="log-error">❌ 질문을 입력해주세요.</div>'), "", "")
+        yield (_wrap_log('<div class="log-error">❌ Please enter your question.</div>'), "", "")
         return
     if not endpoint:
-        yield (_wrap_log('<div class="log-error">❌ API 엔드포인트를 확인해주세요.</div>'), "", "")
+        yield (_wrap_log('<div class="log-error">❌ Please check the API endpoint.</div>'), "", "")
         return
 
     text_acc    = ""
@@ -668,7 +613,7 @@ def stream_analyze(query, persona_name, endpoint):
 
         t = timer_text(elapsed())
         if first_delta:
-            panel = _wrap_answer(_md_to_html(text_acc), t)
+            panel = _wrap_answer(frozen_log, _md_to_html(text_acc), t)
         else:
             panel = _wrap_log(_make_log_html(log_lines))
         yield (panel, t, result_json)
@@ -676,10 +621,9 @@ def stream_analyze(query, persona_name, endpoint):
         if worker_done:
             break
 
-    # 최종
     t = timer_text(elapsed())
     if first_delta:
-        panel = _wrap_answer(_md_to_html(text_acc), t)
+        panel = _wrap_answer(frozen_log, _md_to_html(text_acc), t)
     else:
         panel = _wrap_log(_make_log_html(log_lines))
     yield (panel, t, result_json)
@@ -690,7 +634,7 @@ def stream_analyze(query, persona_name, endpoint):
 # ─────────────────────────────────────────────────────────────
 def generate_persona_stream(info, endpoint):
     if not info or not info.strip():
-        yield "인물 정보를 입력해주세요.", "{}", timer_text("0.0초")
+        yield "Please enter the person information.", "{}", timer_text("0.0초")
         return
 
     persona_ep = endpoint.rstrip("/").rsplit("/", 1)[0] + "/persona/"
@@ -755,7 +699,7 @@ def generate_persona_stream(info, endpoint):
                     log_lines.append(("error", msg))
 
                 elif et == "done":
-                    pass  # 이미 result에서 처리
+                    pass
 
             elif kind == "exception":
                 log_lines.append(("error", str(payload)))
@@ -765,8 +709,15 @@ def generate_persona_stream(info, endpoint):
 
         t = timer_text(elapsed())
         if result_data:
-            # 최종 결과 표시
             data = result_data
+            existing_names = {p.name.strip() for p in _parse_personas()}
+            if data.get("name") and data["name"].strip() not in existing_names:
+                # API 응답의 image_path를 그대로 신뢰해 저장
+                # (없으면 None으로 저장되며, 추후 Edit Profile에서 업로드 가능)
+                with PERSONA_FILE.open("a", encoding="utf-8") as f:
+                    f.write(json.dumps(data, ensure_ascii=False) + "\n")
+                global _persona_cache_mtime
+                _persona_cache_mtime = 0.0
             md = "\n\n".join([
                 f"**이름**: {data.get('name','')}",
                 f"**배경**: {data.get('summary','')}",
@@ -780,12 +731,10 @@ def generate_persona_stream(info, endpoint):
             yield md, json.dumps(data, ensure_ascii=False, indent=2), t
             break
         else:
-            # 진행 상황 표시
             panel = _wrap_log(_make_log_html(log_lines))
             yield panel, "{}", t
 
         if worker_done and not result_data:
-            # 오류 발생 시
             panel = _wrap_log(_make_log_html(log_lines))
             yield panel, "{}", t
             break
@@ -808,9 +757,13 @@ CSS = """
     --ws-code-bg:      #f1f5f9;
     --ws-green-bg:     #f0fdfa;
     --ws-green-border: #99f6e4;
+
+    --panel-height: 680px;
+
+    --pf-left-h: 130px;
+    --pf-right-h: calc(var(--pf-left-h) * 3 + 12px * 2);
 }
 
-/* ── 전역 폰트 ── */
 .gradio-container,
 .gradio-container :is(h1,h2,h3,h4,h5,h6,p,span,div,label,button,input,textarea,select) {
     font-family: "IBM Plex Sans KR","Noto Sans KR","Source Sans 3",sans-serif !important;
@@ -820,7 +773,6 @@ CSS = """
     background: radial-gradient(circle at top left,#edf9f6 0%,#f8fbfc 35%,#fdfefe 100%) !important;
 }
 
-/* ── 헤더 ── */
 #ws-header {
     background: linear-gradient(135deg,#f0fdfa 0%,#e8faf7 55%,#f7faf9 100%);
     border: 1px solid #b2e8e2;
@@ -844,7 +796,6 @@ CSS = """
     color:var(--ws-accent); margin-right:7px; vertical-align:middle;
 }
 
-/* ── 탭 ── */
 .tab-nav button {
     background:transparent !important; color:var(--ws-muted) !important;
     border:none !important; border-bottom:2px solid transparent !important;
@@ -857,11 +808,8 @@ CSS = """
     background:transparent !important;
 }
 
-/* ══════════════════════════════════════════════
-   질문하기 탭 — 좌우 분할 레이아웃
-══════════════════════════════════════════════ */
+#qa-row { align-items: stretch !important; }
 
-/* 좌: 입력 패널 */
 #input-col {
     background: var(--ws-surface);
     border: 1px solid var(--ws-border) !important;
@@ -869,6 +817,10 @@ CSS = """
     padding: 18px 20px !important;
     box-shadow: 0 2px 12px rgba(16,24,40,.04);
     display: flex; flex-direction: column; gap: 10px;
+    height: auto !important;
+    min-height: var(--panel-height);
+    overflow-y: visible !important;
+    box-sizing: border-box;
 }
 
 .ws-label {
@@ -877,7 +829,6 @@ CSS = """
 }
 .ws-divider { border:none; border-top:1px solid var(--ws-border); margin:10px 0; }
 
-/* 페르소나 요약 */
 #persona-summary {
     background: linear-gradient(180deg,#f9fefd 0%,#f3fbf9 100%) !important;
     border: 1px solid #cde8e3 !important; border-radius: 10px !important;
@@ -886,12 +837,7 @@ CSS = """
 }
 #persona-summary > .wrap,#persona-summary > div.prose { padding:0!important;border:none!important;box-shadow:none!important; }
 
-/* 예시 버튼 그리드 */
-#example-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 5px;
-}
+#example-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; }
 #example-grid button {
     width: 100% !important; text-align: left !important;
     background: var(--ws-code-bg) !important; border: 1px solid var(--ws-border) !important;
@@ -906,7 +852,6 @@ CSS = """
     color: var(--ws-accent) !important;
 }
 
-/* 분석 버튼 */
 #run-btn {
     background: linear-gradient(135deg,#0f766e 0%,#14b8a6 100%) !important;
     border: none !important; color: #fff !important; font-weight: 700 !important;
@@ -917,235 +862,370 @@ CSS = """
 #clear-btn {
     background: var(--ws-code-bg) !important; border: 1px solid var(--ws-border) !important;
     color: var(--ws-muted) !important; border-radius: 9px !important; font-size:12px!important;
-    transition: border-color .18s,color .18s !important;
 }
 #clear-btn:hover { border-color:var(--ws-accent)!important; color:var(--ws-accent)!important; }
 
-/* 새로고침 버튼 */
 #refresh-btn {
     min-width:34px!important; padding:0 8px!important;
     background:var(--ws-code-bg)!important; border:1px solid var(--ws-border)!important;
     color:var(--ws-muted)!important; border-radius:8px!important; font-size:15px!important;
-    transition:color .18s,border-color .18s!important;
 }
 #refresh-btn:hover { color:var(--ws-accent)!important; border-color:var(--ws-accent)!important; background:var(--ws-green-bg)!important; }
 
-/* 우: 출력 컬럼 */
 #output-col {
     border: 1px solid var(--ws-border) !important;
     border-radius: 14px !important;
-    overflow: hidden;
+    overflow: hidden !important;
     background: var(--ws-surface);
     box-shadow: 0 2px 12px rgba(16,24,40,.04);
+    height: var(--panel-height) !important;
+    display: flex !important; flex-direction: column !important;
+    box-sizing: border-box;
+    min-height: var(--panel-height) !important;
+    height: auto !important;
 }
-/* output-col 안의 Gradio 래퍼들 여백 제거 */
 #output-col > .wrap, #output-col > div {
     padding: 0 !important; margin: 0 !important;
     border: none !important; box-shadow: none !important;
+    height: 100% !important;
+    display: flex !important; flex-direction: column !important;
+    overflow: hidden !important; min-height: 0 !important;
 }
 
-/* 단일 출력 패널 */
-#output-panel {
-    display: flex;
-    flex-direction: column;
-    min-height: 520px;
-}
+#output-panel { display:flex; flex-direction:column; height:100%; overflow:hidden; min-height:0; }
 
-/* 패널 헤더 */
 .panel-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 16px;
-    background: #f7faf9;
-    border-bottom: 1px solid var(--ws-border);
-    flex-shrink: 0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 16px; background:#f7faf9;
+    border-bottom:1px solid var(--ws-border); flex-shrink:0;
 }
-.panel-title {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: .07em; color: var(--ws-muted);
-}
+.panel-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--ws-muted); }
 .panel-timer {
-    font-size: 11px; font-weight: 600; color: var(--ws-accent);
-    background: var(--ws-green-bg); border: 1px solid var(--ws-green-border);
-    padding: 2px 10px; border-radius: 999px;
+    font-size:11px; font-weight:600; color:var(--ws-accent);
+    background:var(--ws-green-bg); border:1px solid var(--ws-green-border);
+    padding:2px 10px; border-radius:999px;
 }
+.idle-msg { display:flex; align-items:center; justify-content:center; flex:1; color:var(--ws-muted); font-size:13px; }
 
-/* 대기 상태 */
-.idle-msg {
-    display: flex; align-items: center; justify-content: center;
-    height: 480px;
-    color: var(--ws-muted); font-size: 13px;
-}
-
-/* 로그 단계 */
-#log-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 14px 18px;
-    font-size: 12px; line-height: 1.7;
-    max-height: calc(100vh - 260px);
-}
-.log-status {
-    display: flex; align-items: flex-start; gap: 7px;
-    padding: 3px 0; color: var(--ws-text);
-}
-.log-status span { color: var(--ws-text); }
+#log-scroll { flex:1; overflow-y:auto; padding:14px 18px; font-size:12px; line-height:1.7; }
+.log-status { display:flex; align-items:flex-start; gap:7px; padding:3px 0; color:var(--ws-text); }
+.log-status span { color:var(--ws-text); }
 .log-stdout pre {
-    margin: 3px 0; padding: 4px 10px;
-    background: #f1f8f7; border-left: 3px solid var(--ws-accent2);
-    border-radius: 0 5px 5px 0;
-    font-family: "JetBrains Mono","IBM Plex Mono",monospace !important;
-    font-size: 11px !important; color: var(--ws-muted);
-    white-space: pre-wrap; word-break: break-all;
+    margin:3px 0; padding:4px 10px;
+    background:#f1f8f7; border-left:3px solid var(--ws-accent2); border-radius:0 5px 5px 0;
+    font-family:"JetBrains Mono","IBM Plex Mono",monospace !important;
+    font-size:11px !important; color:var(--ws-muted); white-space:pre-wrap; word-break:break-all;
 }
-.log-done  { color: var(--ws-accent); font-weight: 700; padding: 4px 0; }
-.log-error { color: #e53e3e; padding: 4px 0; }
+.log-done  { color:var(--ws-accent); font-weight:700; padding:4px 0; }
+.log-error { color:#e53e3e; padding:4px 0; }
 
-/* 답변 단계 */
-#answer-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 18px 22px;
-    max-height: calc(100vh - 260px);
+#answer-scroll-wrap { display:flex; flex-direction:column; height:calc(var(--panel-height) - 42px); overflow:hidden; }
+.result-log-section { border-bottom:2px solid var(--ws-border); background:#f7faf9; flex-shrink:0; max-height:140px; overflow:hidden; }
+.result-log-section[open] { overflow-y:auto; }
+.result-log-header {
+    font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--ws-muted);
+    padding:7px 18px; cursor:pointer; display:flex; align-items:center; justify-content:space-between;
+    list-style:none; user-select:none;
 }
-.md-body {
-    color: var(--ws-text); line-height: 1.75; font-size: 14.5px;
-    font-family: "IBM Plex Sans KR","Noto Sans KR","Source Sans 3",sans-serif;
+.result-log-header::-webkit-details-marker { display:none; }
+.result-log-header::after { content:"▲"; font-size:9px; color:var(--ws-muted); transition:transform 0.2s; }
+.result-log-section:not([open]) .result-log-header::after { transform:rotate(180deg); }
+.result-log-section:not([open]) ~ .result-answer-section #answer-scroll { height:calc(var(--panel-height) - 78px) !important; }
+.log-toggle-hint { font-size:9px; font-weight:400; color:#9bb0ac; margin-left:6px; text-transform:none; letter-spacing:0; }
+.result-log-body { padding:0 18px 10px; font-size:12px; line-height:1.7; }
+.result-answer-section { padding:0; flex:1; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+.result-answer-header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 18px 8px; border-bottom:1px solid var(--ws-border);
+    background:linear-gradient(135deg,#f0fdfa 0%,#e8faf7 100%); flex-shrink:0;
 }
-.md-body h1,.md-body h2,.md-body h3,.md-body h4 { color: #0b3b39; margin: .85em 0 .35em; }
-.md-body h2 { font-size: 16px; border-bottom: 1px solid var(--ws-border); padding-bottom: 5px; }
-.md-body h3 { font-size: 14px; color: var(--ws-accent); }
-.md-body h4 { font-size: 13px; }
-.md-body p  { margin: .4em 0; }
-.md-body strong { font-weight: 700; }
-.md-body em     { font-style: italic; }
-.md-body ul,.md-body ol { margin: .4em 0; padding-left: 1.5em; }
-.md-body li { margin: .2em 0; }
-.md-body code {
-    background: var(--ws-code-bg); color: #0b3b39;
-    border: 1px solid #d9e2ec; border-radius: 5px;
-    padding: .1em .35em; font-size: .91em;
-    font-family: "JetBrains Mono","IBM Plex Mono",monospace;
+.result-answer-badge { font-size:13px; font-weight:700; color:var(--ws-accent); letter-spacing:.01em; }
+#answer-scroll { padding:18px 22px; overflow-y:auto !important; height:calc(var(--panel-height) - 118px) !important; box-sizing:border-box; }
+
+.md-body { color:var(--ws-text); line-height:1.75; font-size:14.5px; }
+.md-body h1,.md-body h2,.md-body h3,.md-body h4 { color:#0b3b39; margin:.85em 0 .35em; }
+.md-body h2 { font-size:16px; border-bottom:1px solid var(--ws-border); padding-bottom:5px; }
+.md-body h3 { font-size:14px; color:var(--ws-accent); }
+.md-body h4 { font-size:13px; }
+.md-body p  { margin:.4em 0; }
+.md-body strong { font-weight:700; }
+.md-body em     { font-style:italic; }
+.md-body a.md-link {
+    display:inline-flex; align-items:center; gap:4px;
+    color:var(--ws-accent); font-size:12.5px; font-weight:500; text-decoration:none;
+    background:var(--ws-green-bg); border:1px solid var(--ws-green-border);
+    border-radius:6px; padding:2px 9px; transition:background .15s,border-color .15s;
 }
-.md-body pre {
-    background: #0f172a; color: #e2e8f0;
-    border-radius: 10px; border: 1px solid #1e293b;
-    padding: .85em 1em; overflow-x: auto; margin: .7em 0;
-}
-.md-body pre code { background: transparent; border: none; color: inherit; padding: 0; }
-.md-body blockquote {
-    margin: .8em 0; padding: .6em .9em;
-    border-left: 4px solid var(--ws-accent2);
-    background: var(--ws-green-bg); color: #115e59;
-    border-radius: 0 8px 8px 0;
-}
+.md-body a.md-link:hover { background:#ccfbf1; border-color:var(--ws-accent); }
+.md-body li.md-link-item { list-style:none; margin:3px 0; }
+.md-body p.md-link-p { margin:3px 0; }
+.md-body ul,.md-body ol { margin:.4em 0; padding-left:1.5em; }
+.md-body ul ul,.md-body ol ol,.md-body ul ol,.md-body ol ul { margin:.2em 0; padding-left:1.4em; }
+.md-body li { margin:.2em 0; }
+.md-body li > ul,.md-body li > ol { margin-top:.15em; }
+.md-body code { background:var(--ws-code-bg); color:#0b3b39; border:1px solid #d9e2ec; border-radius:5px; padding:.1em .35em; font-size:.91em; font-family:"JetBrains Mono","IBM Plex Mono",monospace; }
+.md-body pre { background:#0f172a; color:#e2e8f0; border-radius:10px; border:1px solid #1e293b; padding:.85em 1em; overflow-x:auto; margin:.7em 0; }
+.md-body pre code { background:transparent; border:none; color:inherit; padding:0; }
+.md-body blockquote { margin:.8em 0; padding:.6em .9em; border-left:4px solid var(--ws-accent2); background:var(--ws-green-bg); color:#115e59; border-radius:0 8px 8px 0; }
 .md-body table { width:100%; border-collapse:collapse; margin:.7em 0; }
-.md-body th {
-    background:#eef6f4; color:#0f3f3b; font-weight:600; font-size:12px;
-    text-transform:uppercase; letter-spacing:.04em;
-    padding:7px 10px; border:1px solid var(--ws-border);
-}
+.md-body th { background:#eef6f4; color:#0f3f3b; font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; padding:7px 10px; border:1px solid var(--ws-border); }
 .md-body td { border:1px solid var(--ws-border); padding:6px 10px; vertical-align:top; }
 .md-body tr:hover td { background:#f9fefd; }
 
-/* 타이머는 패널 헤더 안에 내장됨 */
+#timer-row { display:none !important; }
 
-/* ── 하단 JSON 고정 ── */
-#result-json-wrap {
-    border-top: 2px solid var(--ws-border);
-    background: var(--ws-surface);
-}
-#result-json-wrap .accordion-header { padding: 10px 16px !important; }
-#meta-box {
-    max-height: 220px; overflow-y: auto;
-    background: var(--ws-surface)!important; border:none!important;
-}
-#meta-box code,#meta-box pre {
-    font-family:"JetBrains Mono",monospace!important;
-    font-size:11.5px!important; color:var(--ws-muted)!important; background:transparent!important;
-}
+#result-json-wrap { border-top:2px solid var(--ws-border); background:var(--ws-surface); }
+#result-json-wrap .accordion-header { padding:10px 16px !important; }
+#meta-box { max-height:220px; overflow-y:auto; background:var(--ws-surface)!important; border:none!important; }
+#meta-box code,#meta-box pre { font-family:"JetBrains Mono",monospace!important; font-size:11.5px!important; color:var(--ws-muted)!important; background:transparent!important; }
 
-/* ── 로딩 (페르소나 탭용) ── */
-.ws-loading {
-    position:relative; overflow:hidden; border:1px solid #cde8e3; border-radius:12px;
-    background:linear-gradient(180deg,#f9fefd 0%,#f3fbf9 100%); padding:14px 16px;
-}
+.ws-loading { position:relative; overflow:hidden; border:1px solid #cde8e3; border-radius:12px; background:linear-gradient(180deg,#f9fefd 0%,#f3fbf9 100%); padding:14px 16px; }
 .ws-loading-title { color:var(--ws-accent); font-weight:700; margin-bottom:6px; }
 .ws-loading-msg   { color:#365055; font-size:13px; }
-.shimmer::after {
-    content:""; position:absolute; top:0; left:-140%; width:80%; height:100%;
-    background:linear-gradient(100deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.55) 45%,rgba(255,255,255,0) 100%);
-    animation:ws-shimmer 1.6s ease-in-out infinite;
-}
+.shimmer::after { content:""; position:absolute; top:0; left:-140%; width:80%; height:100%; background:linear-gradient(100deg,rgba(255,255,255,0) 0%,rgba(255,255,255,.55) 45%,rgba(255,255,255,0) 100%); animation:ws-shimmer 1.6s ease-in-out infinite; }
 @keyframes ws-shimmer { 0%{left:-140%} 100%{left:150%} }
 
-/* ── 페르소나 생성 탭 ── */
-#persona-result-wrapper {
-    min-height:180px; max-height:50vh; overflow-y:auto!important;
-    border:1px solid var(--ws-border)!important; border-radius:14px!important;
-    background:var(--ws-surface)!important; padding:20px 24px!important;
-    color:var(--ws-text)!important; font-size:14px!important; line-height:1.72!important;
+#persona-input-col {
+    background: var(--ws-surface);
+    border: 1px solid var(--ws-border) !important;
+    border-radius: 14px !important;
+    padding: 18px 20px !important;
+    box-shadow: 0 2px 12px rgba(16,24,40,.04);
+    display: flex;
+    flex-direction: column;
+    min-height: 260px;
 }
+#persona-example-col {
+    background: var(--ws-surface);
+    border: 1px solid var(--ws-border) !important;
+    border-radius: 14px !important;
+    padding: 14px 16px !important;
+    box-shadow: 0 2px 12px rgba(16,24,40,.04);
+    display: flex;
+    flex-direction: column;
+    min-height: 260px;
+}
+.persona-example-btn { width:100%!important; background:var(--ws-code-bg)!important; border:1px solid var(--ws-border)!important; border-radius:8px!important; color:var(--ws-text)!important; font-size:12px!important; margin-bottom:4px!important; transition:all .18s!important; }
+.persona-example-btn:hover { background:var(--ws-green-bg)!important; border-color:var(--ws-accent2)!important; color:var(--ws-accent)!important; }
+#persona-gen-btn { background:linear-gradient(135deg,#0f766e 0%,#14b8a6 100%)!important; border:none!important; color:#fff!important; font-weight:700!important; font-size:13px!important; border-radius:9px!important; min-height:42px!important; width:100%!important; margin-top:10px!important; }
+#persona-result-wrapper { min-height:180px; max-height:50vh; overflow-y:auto!important; border:1px solid var(--ws-border)!important; border-radius:14px!important; background:var(--ws-surface)!important; padding:20px 24px!important; color:var(--ws-text)!important; font-size:14px!important; line-height:1.72!important; margin-top:12px!important; }
 
-/* ── 프로필 카드 ── */
-#profile-wrapper { max-height:78vh; overflow-y:auto; padding:4px 2px; }
-.pf-empty { color:var(--ws-muted); font-size:14px; text-align:center; padding:40px 20px; }
-.pf-card { background:var(--ws-surface); border:1px solid var(--ws-border); border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(16,24,40,.07); }
-.pf-header { display:flex; gap:24px; align-items:flex-start; padding:28px 28px 20px; background:linear-gradient(135deg,#f0fdfa 0%,#e8faf7 60%,#f7faf9 100%); border-bottom:1px solid var(--ws-border); }
-.pf-avatar { flex-shrink:0; width:120px; height:120px; border-radius:50%; overflow:hidden; border:3px solid #b2e8e2; box-shadow:0 4px 16px rgba(15,118,110,.18); }
-.pf-avatar svg { display:block; width:100%; height:100%; }
-.pf-header-info { flex:1; min-width:0; }
-.pf-name { font-size:22px!important; font-weight:700!important; color:#0b3b39!important; margin:0 0 4px!important; }
-.pf-subtitle { font-size:13px!important; color:var(--ws-accent)!important; font-weight:600!important; margin:0 0 10px!important; }
-.pf-bg { font-size:13px!important; color:var(--ws-muted)!important; line-height:1.6!important; margin:0!important; }
-.pf-meta-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); border-bottom:1px solid var(--ws-border); }
-.pf-meta-row { display:flex; flex-direction:column; padding:12px 20px; border-right:1px solid var(--ws-border); }
-.pf-meta-row:last-child { border-right:none; }
-.pf-meta-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--ws-muted); margin-bottom:3px; }
-.pf-meta-val { font-size:14px; font-weight:600; color:var(--ws-text); }
-.pf-section { padding:18px 24px; border-bottom:1px solid #eef4f2; }
-.pf-section:last-child { border-bottom:none; }
-.pf-section-title { font-size:12px!important; font-weight:700!important; text-transform:uppercase!important; letter-spacing:.07em!important; color:var(--ws-accent)!important; margin:0 0 8px!important; }
-.pf-text { font-size:14px!important; color:var(--ws-text)!important; line-height:1.7!important; margin:0!important; }
-.pf-list { margin:0!important; padding-left:1.2em!important; }
-.pf-list li { font-size:14px!important; color:var(--ws-text)!important; line-height:1.65!important; margin:4px 0!important; }
-.pf-trades { display:flex; flex-direction:column; gap:6px; }
-.pf-trade-item { font-size:13px; color:var(--ws-text); background:var(--ws-code-bg); border-left:3px solid var(--ws-accent2); border-radius:0 6px 6px 0; padding:6px 12px; }
-.pf-quote { margin:6px 0!important; padding:.6em 1em!important; border-left:4px solid var(--ws-accent2)!important; background:var(--ws-green-bg)!important; color:#115e59!important; border-radius:0 8px 8px 0; font-size:14px!important; font-style:italic; }
+#profile-select-bar {
+    background:var(--ws-surface); border:1px solid var(--ws-border); border-radius:12px;
+    padding:10px 14px!important; margin-bottom:14px!important; align-items:center!important;
+    box-shadow:0 1px 6px rgba(16,24,40,.04);
+}
+#profile-dd { border-radius:8px!important; }
+#profile-wrapper { margin-bottom:14px; }
 
-/* ── 스크롤바 ── */
+.pf-placeholder {
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:220px; gap:12px; border:2px dashed var(--ws-border); border-radius:16px; color:var(--ws-muted);
+}
+.pf-placeholder span { font-size:48px; opacity:.35; }
+.pf-placeholder p { font-size:14px; margin:0; }
+
+.pf-card { background:var(--ws-surface); border:1px solid var(--ws-border); border-radius:16px; overflow:visible; box-shadow:0 4px 24px rgba(16,24,40,.07); position:relative; }
+.pf-banner { height:100px; background:linear-gradient(135deg,#0f766e 0%,#14b8a6 55%,#5eead4 100%); position:relative; border-radius:16px 16px 0 0; overflow:hidden; }
+.pf-banner-pattern { position:absolute; inset:0; opacity:.15; background-image:radial-gradient(circle,#fff 1px,transparent 1px); background-size:18px 18px; }
+.pf-identity { display:flex; align-items:flex-start; gap:20px; padding:0 28px; margin-top:-54px; margin-bottom:12px; position:relative; z-index:2; }
+.pf-avatar { width:100px; height:100px; border-radius:50%; overflow:hidden; border:4px solid var(--ws-surface); box-shadow:0 4px 16px rgba(15,118,110,.25); flex-shrink:0; background:#e2f0ee; }
+.pf-avatar img,.pf-avatar svg { width:100%; height:100%; object-fit:cover; display:block; }
+.pf-identity-info { display: flex; flex-direction: column; justify-content: flex-end; min-height: 100px; padding-bottom:6px; flex:1; min-width:0; }
+.pf-name { font-size:24px!important; font-weight:800!important; color:#0b3b39!important; margin:0 0 2px!important; line-height:1.2!important; }
+.pf-subtitle { font-size:13px!important; color:var(--ws-accent)!important; font-weight:600!important; margin:0!important; }
+.pf-body { padding:0 28px 24px; }
+.pf-summary { font-size:14px!important; color:var(--ws-muted)!important; line-height:1.65!important; margin:0 0 20px!important; padding-bottom:18px!important; border-bottom:1px solid #eef4f2!important; }
+.pf-tags { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:20px; }
+.pf-tag { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:999px; background:var(--ws-green-bg); border:1px solid var(--ws-green-border); font-size:12px; color:#0d5c54; font-weight:600; }
+.pf-tag-icon { font-size:13px; }
+
+.pf-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 16px;
+    align-items: start;
+}
+.pf-left {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.pf-left-section {
+    height: var(--pf-left-h) !important;
+    min-height: var(--pf-left-h) !important;
+    max-height: var(--pf-left-h) !important;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+.pf-right {
+    display: flex;
+    flex-direction: column;
+}
+.pf-right-section {
+    height: var(--pf-right-h) !important;
+    min-height: var(--pf-right-h) !important;
+    max-height: var(--pf-right-h) !important;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+.pf-left-section::-webkit-scrollbar,
+.pf-right-section::-webkit-scrollbar { width: 3px; }
+.pf-left-section::-webkit-scrollbar-track,
+.pf-right-section::-webkit-scrollbar-track { background: transparent; }
+.pf-left-section::-webkit-scrollbar-thumb,
+.pf-right-section::-webkit-scrollbar-thumb { background: var(--ws-green-border); border-radius: 3px; }
+.pf-left-section::-webkit-scrollbar-thumb:hover,
+.pf-right-section::-webkit-scrollbar-thumb:hover { background: var(--ws-accent2); }
+
+.pf-bottom { display:flex; flex-direction:column; gap:14px; margin-top:16px; }
+.pf-sections { display:grid; grid-template-columns:1fr; gap:14px; }
+
+.pf-section {
+    background: var(--ws-code-bg);
+    border: 1px solid var(--ws-border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    box-sizing: border-box;
+}
+.pf-section.full { width: 100%; }
+
+.pf-section-title { font-size:10px!important; font-weight:700!important; text-transform:uppercase!important; letter-spacing:.08em!important; color:var(--ws-accent)!important; margin:0 0 8px!important; }
+.pf-text { font-size:13.5px!important; color:var(--ws-text)!important; line-height:1.7!important; margin:0!important; }
+.pf-list { margin:0!important; padding-left:1.1em!important; }
+.pf-list li { font-size:13px!important; color:var(--ws-text)!important; line-height:1.6!important; margin:6px 0!important; }
+.pf-trades { display:flex; flex-direction:column; gap:5px; }
+.pf-trade-item { font-size:12.5px; color:var(--ws-text); background:var(--ws-surface); border-left:3px solid var(--ws-accent2); border-radius:0 6px 6px 0; padding:5px 10px; }
+.pf-quotes { display:flex; flex-direction:column; gap:8px; }
+.pf-quote { margin:0!important; padding:.55em .9em!important; border-left:3px solid var(--ws-accent2)!important; background:var(--ws-surface)!important; color:#115e59!important; border-radius:0 8px 8px 0; font-size:13px!important; font-style:italic; }
+
+#edit-accordion { border:1px solid var(--ws-border)!important; border-radius:12px!important; background:var(--ws-surface)!important; overflow:hidden; }
+#edit-accordion .label-wrap { padding:12px 16px!important; }
+#edit-accordion label span { font-size:13px!important; font-weight:700!important; color:var(--ws-text)!important; }
+#edit-image-upload .wrap { padding:6px 10px!important; min-height:40px!important; border-radius:8px!important; border:1px dashed var(--ws-border)!important; background:var(--ws-code-bg)!important; }
+#edit-image-upload label { font-size:11px!important; color:var(--ws-muted)!important; }
+
 ::-webkit-scrollbar { width:5px; height:5px; }
 ::-webkit-scrollbar-track { background:transparent; }
 ::-webkit-scrollbar-thumb { background:var(--ws-border); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background:#aec5c1; }
 body:has(.options:not(.hide)) { overflow:hidden!important; }
 
-/* ── 반응형 ── */
 @media (max-width: 768px) {
-    #example-grid { grid-template-columns: 1fr 1fr !important; }
-    .pf-header { flex-direction:column; }
-    .pf-avatar { width:80px; height:80px; }
+    #example-grid { grid-template-columns:1fr 1fr!important; }
+    .pf-identity { flex-direction:column; align-items:flex-start; margin-top:-30px; }
+    .pf-grid { grid-template-columns:1fr!important; }
+    .pf-left-section { height:auto!important; min-height:100px!important; max-height:none!important; }
+    .pf-right-section { height:auto!important; min-height:160px!important; max-height:none!important; }
+    :root { --panel-height:500px; }
+    #output-col { max-height:none!important; }
 }
+
+.edit-panel { background:var(--ws-surface); border:1px solid var(--ws-border); border-radius:14px; padding:18px 20px; box-shadow:0 2px 12px rgba(16,24,40,.04); }
+.edit-panel label { font-size:12px!important; font-weight:600!important; color:var(--ws-muted)!important; }
 """
 
 HEADER_HTML = """
 <div id="ws-header">
   <h1>📈 Wallstreet AI</h1>
-  <p><span class="ws-badge">Live</span>실적 · 뉴스 · 시장 트렌드를 한 곳에서 &mdash; AI 금융 분석 플랫폼</p>
+  <p>
+    <span class="ws-badge">Agentic AI</span>
+    Intent parsing · Tool routing · Data collection · LLM generation &mdash;
+    Financial analysis assistant powered by investor personas
+  </p>
 </div>
 """
 
 
-# ─────────────────────────────────────────────────────────────
-# Gradio 앱 빌드
+def _persona_to_dict(p: PersonaLine) -> dict:
+    return {k: v for k, v in p.model_dump().items() if v is not None}
+
+
+def save_persona_edits(
+    original_name,
+    new_name,
+    full_name,
+    summary,
+    financial_mindset,
+    data_analysis_approach,
+    response_style,
+    key_principles_text,
+    famous_quotes_text,
+    image_path=""  # ✅ 변경
+) -> str:
+
+    if not original_name or original_name == "없음":
+        return "Select a persona to save."
+
+    try:
+        personas = _parse_personas()
+        updated = False
+        new_lines = []
+
+        for p in personas:
+            if p.name.strip() == original_name:
+                d = _persona_to_dict(p)
+
+                # 🔥 핵심: image_path 직접 저장
+                d["image_path"] = image_path.strip() or d.get("image_path")
+
+                d["name"]                   = new_name.strip() or d["name"]
+                d["full_name"]              = full_name.strip() or d["full_name"]
+                d["summary"]                = summary.strip()
+                d["financial_mindset"]      = financial_mindset.strip()
+                d["data_analysis_approach"] = data_analysis_approach.strip()
+                d["response_style"]         = response_style.strip()
+                d["key_principles"]         = [x.strip() for x in key_principles_text.split("\n") if x.strip()]
+                d["famous_quotes"]          = [x.strip() for x in famous_quotes_text.split("\n") if x.strip()] or None
+
+                new_lines.append(json.dumps(d, ensure_ascii=False))
+                updated = True
+            else:
+                new_lines.append(json.dumps(_persona_to_dict(p), ensure_ascii=False))
+
+        if not updated:
+            return "No corresponding persona found."
+
+        PERSONA_FILE.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+        global _persona_cache_mtime
+        _persona_cache_mtime = 0.0
+
+        return "✅ Save complete!"
+
+    except Exception as e:
+        return f"❌ Save fail: {e}"
+
+
+def load_persona_for_edit(name: str):
+    # UI의 edit_outputs 리스트(8개 항목)에 순서와 개수를 맞춥니다:
+    # [edit_name, edit_full_name, edit_summary, edit_mindset, edit_approach, edit_style, edit_principles, edit_quotes]
+    empty = ("", "", "", "", "", "", "", "","")
+    if not name or name == "없음":
+        return empty
+    for p in _parse_personas():
+        if p.name.strip() == name:
+            return (
+                p.name or "",
+                p.full_name or "",
+                p.summary or "",
+                p.financial_mindset or "",
+                p.data_analysis_approach or "",
+                p.response_style or "",
+                "\n".join(p.key_principles or []),
+                "\n".join(p.famous_quotes or []),
+                p.image_path or "",
+            )
+    return empty
+
+
 # ─────────────────────────────────────────────────────────────
 def create_app(default_endpoint):
     theme = gr.themes.Soft(primary_hue="emerald", secondary_hue="teal",
                            neutral_hue="slate", radius_size="lg")
 
-    with gr.Blocks(title="Wallstreet AI", css=CSS, theme=theme,
-                   analytics_enabled=False) as demo:
+    with gr.Blocks(title="Wallstreet AI", analytics_enabled=False) as demo:
 
-        # 엔드포인트 — 숨김 상태로 보관 (UI에서 안 보임)
         endpoint_state = gr.State(default_endpoint)
 
         gr.HTML(HEADER_HTML)
@@ -1153,16 +1233,14 @@ def create_app(default_endpoint):
         with gr.Tabs():
 
             # ════════════════════════════════════════════
-            # TAB 1 : 질문하기  (좌/우 반반)
+            # TAB 1 : 질문하기
             # ════════════════════════════════════════════
-            with gr.Tab("💬 질문하기"):
-                with gr.Row(equal_height=False):
+            with gr.Tab("💬 Ask a Question"):
+                with gr.Row(equal_height=True, elem_id="qa-row"):
 
-                    # ── 좌: 입력 패널 ──────────────────
                     with gr.Column(scale=1, min_width=280, elem_id="input-col"):
 
-                        # 페르소나
-                        gr.HTML("<p class='ws-label'>페르소나</p>")
+                        gr.HTML("<p class='ws-label'>Persona</p>")
                         with gr.Row():
                             persona_dd = gr.Dropdown(
                                 label="", choices=load_persona_names(),
@@ -1171,109 +1249,94 @@ def create_app(default_endpoint):
                             )
                             refresh_btn = gr.Button("↺", size="sm", scale=1,
                                                     min_width=34, elem_id="refresh-btn")
-                        persona_summary = gr.Markdown(value="",elem_id="persona-summary",visible=True)
+                        persona_summary = gr.Markdown(value="", elem_id="persona-summary", visible=True)
 
                         gr.HTML("<hr class='ws-divider'>")
 
-                        # 예시 질문 (유형별 9개 버튼)
-                        gr.HTML("<p class='ws-label'>예시 질문</p>")
+                        gr.HTML("<p class='ws-label'>Example Questions</p>")
                         with gr.Column(elem_id="example-grid"):
                             example_btns = []
-                            for key, example_text in EXAMPLES_BY_TYPE.items():
-                                label = ANALYSIS_TYPE_LABELS[key]
-                                b = gr.Button(f"{label}: {example_text}", size="sm")
+                            for example_text in EXAMPLES_BY_TYPE.values():
+                                b = gr.Button(example_text, size="sm")
                                 example_btns.append((b, example_text))
 
                         gr.HTML("<hr class='ws-divider'>")
 
-                        # 질문 입력
-                        gr.HTML("<p class='ws-label'>질문 입력</p>")
+                        gr.HTML("<p class='ws-label'>Ask Question</p>")
                         query_input = gr.Textbox(
                             label="",
                             placeholder="종목명, 티커, 분석 요청을 입력하세요...",
                             lines=3, value=EXAMPLE_QUERIES[0], show_label=False,
                         )
                         with gr.Row():
-                            run_btn   = gr.Button("🔍  질문하기", variant="primary",
+                            run_btn   = gr.Button("🔍  Ask Question", variant="primary",
                                                    scale=3, elem_id="run-btn")
-                            clear_btn = gr.Button("초기화", scale=1, elem_id="clear-btn")
+                            clear_btn = gr.Button("Reset", scale=1, elem_id="clear-btn")
 
-                    # ── 우: 단일 출력 패널 ──────────────────
                     with gr.Column(scale=1, min_width=300, elem_id="output-col"):
-                        output_panel = gr.HTML(
-                            value=IDLE_PANEL,
-                            show_label=False,
-                        )
-                        timer = gr.Markdown(value="", visible=False)  # 내부용 더미
+                        output_panel = gr.HTML(value=IDLE_PANEL, show_label=False)
+                        timer = gr.Markdown(value="", visible=False)
 
-                # 하단 JSON (전체 너비)
                 with gr.Row(elem_id="result-json-wrap"):
                     with gr.Column():
-                        gr.HTML("<p class='ws-label'>📄 원본 데이터 (JSON)</p>")
-                        meta = gr.Code(
-                            label="", language="json",
-                            elem_id="meta-box", show_label=False,
-                        )
+                        gr.HTML("<p class='ws-label'>📄 Original Data(JSON)</p>")
+                        meta = gr.Code(label="", language="json", elem_id="meta-box", show_label=False)
 
                 gr.HTML(AUTO_SCROLL_JS, visible=False)
 
-                # ── 이벤트 ──
                 def on_run(q, persona, ep):
                     for panel, t, rj in stream_analyze(q, persona, ep):
                         yield panel, t, rj
 
-                run_btn.click(
-                    fn=on_run,
-                    inputs=[query_input, persona_dd, endpoint_state],
-                    outputs=[output_panel, timer, meta],
-                )
-                query_input.submit(
-                    fn=on_run,
-                    inputs=[query_input, persona_dd, endpoint_state],
-                    outputs=[output_panel, timer, meta],
-                )
-                clear_btn.click(
-                    fn=lambda: (IDLE_PANEL, "", ""),
-                    outputs=[output_panel, timer, meta],
-                )
-                refresh_btn.click(
-                    fn=lambda: gr.update(choices=load_persona_names(), value="없음"),
-                    outputs=[persona_dd],
-                )
+                run_btn.click(fn=on_run, inputs=[query_input, persona_dd, endpoint_state], outputs=[output_panel, timer, meta])
+                query_input.submit(fn=on_run, inputs=[query_input, persona_dd, endpoint_state], outputs=[output_panel, timer, meta])
+                clear_btn.click(fn=lambda: (IDLE_PANEL, "", ""), outputs=[output_panel, timer, meta])
+                refresh_btn.click(fn=lambda: gr.update(choices=load_persona_names(), value="없음"), outputs=[persona_dd])
 
                 def on_persona_change(name):
-                    info = load_persona_summary(name)
-                    return gr.update(value=info)
+                    return gr.update(value=load_persona_summary(name))
 
-                persona_dd.change(
-                    fn=on_persona_change, inputs=[persona_dd], outputs=[persona_summary])
+                persona_dd.change(fn=on_persona_change, inputs=[persona_dd], outputs=[persona_summary])
 
-                # 예시 버튼 클릭 → query_input 에 채우기
                 for _b, _text in example_btns:
                     _b.click(fn=lambda t=_text: t, outputs=[query_input])
 
             # ════════════════════════════════════════════
             # TAB 2 : 페르소나 만들기
             # ════════════════════════════════════════════
-            with gr.Tab("🧑‍💼 페르소나 만들기"):
-                gr.HTML("<p class='ws-label'>금융 인물 이름이나 설명을 입력하면 AI가 투자 철학·분석 스타일을 자동으로 구성합니다.</p>")
-                with gr.Row(equal_height=False):
-                    with gr.Column(scale=3, min_width=300):
+            with gr.Tab("🧑‍💼 Create a Persona"):
+                with gr.Row(equal_height=True):
+                    with gr.Column(scale=3, min_width=320, elem_id="persona-input-col"):
+                        gr.HTML("<p class='ws-label'>Enter Person Info</p>")
                         persona_input = gr.Textbox(
-                            label="인물 정보",
-                            placeholder="예: 워렌 버핏, JP모건, 가타야마 아키라 ...", lines=3)
-                        persona_gen_btn = gr.Button("✨  페르소나 생성", variant="primary")
-                    with gr.Column(scale=1, min_width=140):
-                        gr.HTML("<p class='ws-label'>예시 인물</p>")
-                        for ep in ["워렌 버핏", "JP모건", "가타야마 아키라"]:
-                            gr.Button(ep, size="sm").click(fn=lambda x=ep: x, outputs=[persona_input])
+                            label="",
+                            placeholder="ex: Warren Buffett, JP Morgan, Ray Dalio ...",
+                            lines=4, show_label=False)
+                        persona_gen_btn = gr.Button(
+                            "✨  Build Persona", variant="primary",
+                            elem_id="persona-gen-btn",
+                        )
 
-                persona_result = gr.Markdown(value="", label="생성 결과",
-                                             elem_id="persona-result-wrapper")
-                persona_timer  = gr.Markdown(value="", elem_id="timer-row")
-                with gr.Accordion("📄 페르소나 JSON", open=False):
-                    persona_json = gr.Code(label="", language="json",
-                                          elem_id="meta-box", show_label=False)
+                    with gr.Column(scale=1, min_width=150, elem_id="persona-example-col"):
+                        gr.HTML("<p class='ws-label'>Example Figures</p>")
+                        PERSONA_EXAMPLES = [
+                                ("Warren Buffett", "워렌 버핏"),
+                                ("JP Morgan", "JP모건"),
+                                ("Ray Dalio", "레이 달리오"),
+                                ("Ken Griffin", "켄 그리핀"),
+                                ("Jim Rogers", "짐 로저스"),
+                        ]
+                        for label, query in PERSONA_EXAMPLES:
+                            gr.Button(label, size="sm", elem_classes=["persona-example-btn"]).click(
+                                fn=lambda q=query: q,
+                                outputs=[persona_input]
+                            )
+                persona_result = gr.Markdown(value="", label="생성 결과", elem_id="persona-result-wrapper")
+                persona_timer  = gr.Markdown(value="", visible=False, elem_id="timer-row")
+                with gr.Row(elem_id="result-json-wrap"):
+                    with gr.Column():
+                        gr.HTML("<p class='ws-label'>📄 Persona Data (JSON)</p>")
+                        persona_json = gr.Code(label="", language="json", elem_id="meta-box", show_label=False)
 
                 persona_gen_btn.click(
                     fn=generate_persona_stream,
@@ -1284,28 +1347,60 @@ def create_app(default_endpoint):
             # ════════════════════════════════════════════
             # TAB 3 : 투자자 프로필
             # ════════════════════════════════════════════
-            with gr.Tab("👤 투자자 프로필"):
-                with gr.Row():
-                    with gr.Column(scale=1, min_width=180):
-                        gr.HTML("<p class='ws-label'>투자자 선택</p>")
-                        with gr.Row():
-                            profile_dd = gr.Dropdown(
-                                label="", choices=load_persona_names(), value="없음",
-                                interactive=True, scale=5, show_label=False)
-                            profile_refresh = gr.Button("↺", size="sm", scale=1,
-                                                        min_width=34, elem_id="refresh-btn")
-                    with gr.Column(scale=3): pass
+            with gr.Tab("👤 Investor Profile"):
+
+                with gr.Row(elem_id="profile-select-bar"):
+                    profile_dd = gr.Dropdown(
+                        label="", choices=load_persona_names(), value="없음",
+                        interactive=True, scale=6, show_label=False, elem_id="profile-dd",
+                    )
+                    profile_refresh = gr.Button("↺", size="sm", scale=0, min_width=40, elem_id="refresh-btn")
 
                 profile_card = gr.HTML(
-                    value='<p class="pf-empty">왼쪽에서 투자자를 선택하세요.</p>',
-                    elem_id="profile-wrapper")
+                    value='<div class="pf-placeholder"><span>👤</span><p>Select an Investor Persona</p></div>',
+                    elem_id="profile-wrapper",
+                )
 
-                profile_dd.change(fn=build_profile_html_with_image, inputs=[profile_dd], outputs=[profile_card])
-                profile_refresh.click(
-                    fn=lambda: gr.update(choices=load_persona_names(), value="없음"),
-                    outputs=[profile_dd])
+                with gr.Accordion("✏️ Edit Profile", open=False, elem_id="edit-accordion"):
+                    with gr.Column():
+                        edit_name = gr.Textbox(label="Name", lines=1)
+                        edit_full_name = gr.Textbox(label="Full Name", lines=1)
+                        edit_summary = gr.Textbox(label="Summary", lines=3)
+                        edit_mindset = gr.Textbox(label="Financial Mindset", lines=3)
+                        edit_approach = gr.Textbox(label="Data Analysis Approach", lines=3)
+                        edit_style = gr.Textbox(label="Response Style", lines=2)
 
-    return demo
+                        edit_principles = gr.Textbox(label="Key Principles (one per line)", lines=3)
+                        edit_quotes = gr.Textbox(label="Famous Quotes (one per line)", lines=3)
+
+                        edit_image_path = gr.Textbox(
+                        label="Image Path (absolute)",
+                        placeholder="/home/ai/wallstreet-ai/persona/images/J.P._Morgan.png")
+
+                save_btn = gr.Button("💾  Save", variant="primary")
+                save_status = gr.Markdown(value="")
+
+                edit_outputs = [
+                    edit_name,edit_full_name, edit_summary, edit_mindset, edit_approach,
+                    edit_style, edit_principles, edit_quotes,edit_image_path,
+                ]
+                edit_inputs = [
+                    profile_dd, edit_name,edit_full_name, edit_summary, edit_mindset,
+                    edit_approach, edit_style, edit_principles, edit_quotes,
+                    edit_image_path,
+                ]
+
+                def on_profile_change(name):
+                    card = build_profile_html_with_image(name)
+                    vals = load_persona_for_edit(name)
+                    return (card,) + tuple(vals)
+
+                profile_dd.change(fn=on_profile_change, inputs=[profile_dd], outputs=[profile_card] + edit_outputs)
+                profile_refresh.click(fn=lambda: gr.update(choices=load_persona_names(), value="없음"), outputs=[profile_dd])
+                save_btn.click(fn=save_persona_edits, inputs=edit_inputs, outputs=[save_status]).then(
+                    fn=build_profile_html_with_image, inputs=[profile_dd], outputs=[profile_card])
+
+    return demo, theme
 
 
 # ─────────────────────────────────────────────────────────────
@@ -1322,10 +1417,11 @@ def main():
     print(f"FastAPI : {args.api_url}")
     print(f"Gradio  : http://{args.server_name}:{args.port}")
 
-    app = create_app(args.api_url)
+    app, theme = create_app(args.api_url)
     app.queue(default_concurrency_limit=8, max_size=64)
     app.launch(share=args.share, server_name=args.server_name,
-               server_port=args.port, debug=True)
+               server_port=args.port, debug=True,
+               theme=theme, css=CSS)
 
 
 if __name__ == "__main__":
