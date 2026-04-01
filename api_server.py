@@ -3,12 +3,12 @@ import sys
 import threading
 from queue import Empty, Queue
 from threading import Thread
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pipeline import pipeline as run_pipeline
 from persona.make_persona import make_persona
@@ -190,8 +190,37 @@ async def create_persona(request: PersonaRequest):
 
 class QueryRequest(BaseModel):
     query: str
+    history: List["ChatMessage"] = Field(default_factory=list)
     stream: bool = True
     persona_name: Optional[str] = None
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+def _normalize_chat_role(role: str) -> str:
+    role = (role or "").strip().lower()
+    return role
+
+
+def _normalize_history_input(history_input):
+    history = []
+    for message in history_input or []:
+        if isinstance(message, ChatMessage):
+            role = _normalize_chat_role(message.role)
+            content = (message.content or "").strip()
+        elif isinstance(message, dict):
+            role = _normalize_chat_role(message.get("role", ""))
+            content = (message.get("content", "") or "").strip()
+        else:
+            continue
+
+        if not role or not content:
+            continue
+        history.append({"role": role, "content": content})
+    return history
 
 
 def _sse(payload: dict) -> str:
@@ -216,9 +245,13 @@ def _build_result_payload(result, stdout: str = "") -> dict:
 @app.post("/analyze/")
 async def analyze(request: QueryRequest):
     query = (request.query or "").strip()
+    history = _normalize_history_input(request.history)
     stream = request.stream
 
     persona_name = (request.persona_name or "").strip() or None
+
+    if not query:
+        return JSONResponse(status_code=400, content={"error": "query 필드가 비어 있습니다."})
 
     if not stream:
         stdout_messages = []
@@ -241,6 +274,7 @@ async def analyze(request: QueryRequest):
         try:
             result = run_pipeline(
                 query,
+                history=history,
                 persona_name=persona_name,
                 status_callback=None,
                 stream_callback=None,
@@ -268,6 +302,7 @@ async def analyze(request: QueryRequest):
             try:
                 result = run_pipeline(
                     query,
+                    history=history,
                     persona_name=persona_name,
                     status_callback=on_status,
                     stream_callback=on_delta if stream else None,
