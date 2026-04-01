@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.png" alt="Wallstreet-AI Logo" width="120" />
+<img src="docs/assets/logo.png" alt="Wallstreet-AI Logo" />
 
 # Wallstreet-AI
 
@@ -12,7 +12,11 @@ Combine the investment philosophies of Warren Buffett, Charlie Munger, and other
 [![FastAPI](https://img.shields.io/badge/FastAPI-SSE%20Streaming-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Gradio](https://img.shields.io/badge/Gradio-Web%20UI-FF7C00?style=flat-square&logo=gradio&logoColor=white)](https://gradio.app/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-Responses%20API-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com/)
-[![License](https://img.shields.io/badge/License-See%20LICENSE-6B7280?style=flat-square)](LICENSE)
+
+[![deepwiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkim205/wallstreet-ai)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H)
+[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/davidkim205/wallstreet-ai)
 
 <p align="center">
   <a href="README.md">🇺🇸 English</a> |
@@ -82,7 +86,7 @@ You can apply an investor persona at any stage. The same underlying data produce
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/davidkim205/wallstreet-ai.git
+git clone https://github.com/davidkim205/wallstreet-ai-ai.git
 cd wallstreet-ai
 
 # 2. Create a virtual environment
@@ -108,6 +112,16 @@ Then open your browser at `http://localhost:7860` and ask anything:
 > *"Give me a Warren Buffett-style fundamental analysis of Microsoft for the last 2 years"*
 
 To use the CLI only, skip step 5a and run `python pipeline.py` directly.
+
+---
+## Online Demo
+
+You can try Wallstreet-AI instantly without installing anything.
+
+| Platform | Link | Description |
+|---|---|---|
+| **Google Colab** | https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H | Run the full pipeline in a hosted notebook. Installs the GitHub repo and allows interactive testing. |
+| **HuggingFace Spaces** | https://huggingface.co/spaces/davidkim205/wallstreet-ai | Live web demo similar to Gradio UI for quick experimentation. |
 
 ---
 
