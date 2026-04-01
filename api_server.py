@@ -3,7 +3,7 @@ import sys
 import threading
 from queue import Empty, Queue
 from threading import Thread
-from typing import Optional
+from typing import List, Optional, Union
 
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
@@ -189,9 +189,50 @@ async def create_persona(request: PersonaRequest):
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 class QueryRequest(BaseModel):
-    query: str
+    query: Union[str, List["ChatMessage"]]
     stream: bool = True
     persona_name: Optional[str] = None
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+def _normalize_chat_role(role: str) -> str:
+    role = (role or "").strip().lower()
+    return role
+
+
+def _normalize_query_input(query_input):
+    if isinstance(query_input, str):
+        return query_input.strip(), []
+
+    if not isinstance(query_input, list):
+        return "", []
+
+    conversation = []
+    for message in query_input:
+        if isinstance(message, ChatMessage):
+            role = _normalize_chat_role(message.role)
+            content = (message.content or "").strip()
+        elif isinstance(message, dict):
+            role = _normalize_chat_role(message.get("role", ""))
+            content = (message.get("content", "") or "").strip()
+        else:
+            continue
+
+        if not role or not content:
+            continue
+        conversation.append({"role": role, "content": content})
+
+    current_user_query = ""
+    for message in reversed(conversation):
+        if message["role"] == "user":
+            current_user_query = message["content"]
+            break
+
+    return current_user_query, conversation
 
 
 def _sse(payload: dict) -> str:
@@ -215,10 +256,13 @@ def _build_result_payload(result, stdout: str = "") -> dict:
 
 @app.post("/analyze/")
 async def analyze(request: QueryRequest):
-    query = (request.query or "").strip()
+    query, conversation = _normalize_query_input(request.query)
     stream = request.stream
 
     persona_name = (request.persona_name or "").strip() or None
+
+    if not query:
+        return JSONResponse(status_code=400, content={"error": "query 필드가 비어 있습니다."})
 
     if not stream:
         stdout_messages = []
@@ -241,6 +285,7 @@ async def analyze(request: QueryRequest):
         try:
             result = run_pipeline(
                 query,
+                conversation=conversation,
                 persona_name=persona_name,
                 status_callback=None,
                 stream_callback=None,
@@ -268,6 +313,7 @@ async def analyze(request: QueryRequest):
             try:
                 result = run_pipeline(
                     query,
+                    conversation=conversation,
                     persona_name=persona_name,
                     status_callback=on_status,
                     stream_callback=on_delta if stream else None,

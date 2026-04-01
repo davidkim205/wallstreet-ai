@@ -69,7 +69,7 @@ def save_result_jsonl(result):
     with open(file_name, "a", encoding="utf-8") as f:
         f.write(json.dumps(ordered_data, ensure_ascii=False) + "\n")
 
-def pipeline(query, persona_name=None, status_callback=None, stream_callback=None, stream=True):
+def pipeline(query, conversation=None, persona_name=None, status_callback=None, stream_callback=None, stream=True):
     """
     파이프라인:
         ① 인텐트 파싱  (Chat Completions + Function Calling)
@@ -120,7 +120,14 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
         if stream:
             chunks = []
             print("[⑤] 스트리밍 응답 수신 중...")
-            for delta in generate_analysis_stream(client, query, context, intent, persona=persona):
+            for delta in generate_analysis_stream(
+                client,
+                query,
+                context,
+                intent,
+                persona=persona,
+                conversation=conversation,
+            ):
                 if not delta:
                     continue
                 chunks.append(delta)
@@ -130,7 +137,14 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
             response = "".join(chunks).strip() or "(분석 결과를 가져오지 못했습니다)"
         else:
             print("[⑤] 단일 응답 생성 중...")
-            response = generate_analysis(client, query, context, intent, persona=persona)
+            response = generate_analysis(
+                client,
+                query,
+                context,
+                intent,
+                persona=persona,
+                conversation=conversation,
+            )
             if response:
                 emit_delta(response)
 
@@ -201,13 +215,24 @@ def main():
         except ValueError:
             print("잘못된 입력입니다. 기본 모드로 진행합니다.")
 
+    conversation = []
+    print("\n멀티턴 대화 모드입니다. 이전 질문/답변이 다음 분석에 함께 반영됩니다.")
+    print("대화 초기화: reset 또는 clear | 종료: exit, quit, 종료")
+
     while True:
         text = input("\n질문 > ").strip()
         if text.lower() in ("exit", "quit", "종료"):
             break
+        if text.lower() in ("reset", "clear"):
+            conversation = []
+            print("대화 히스토리를 초기화했습니다.")
+            continue
         if not text:
             continue
-        result = pipeline(text, persona_name=persona_name)
+
+        current_conversation = conversation + [{"role": "user", "content": text}]
+        result = pipeline(text, conversation=current_conversation, persona_name=persona_name)
+        conversation = current_conversation + [{"role": "assistant", "content": result.llm_response}]
         print_result(result)
 
 

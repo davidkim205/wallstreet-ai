@@ -24,6 +24,36 @@ def extract_response_text(resp):
     return "\n".join(texts)
 
 
+def _normalize_history_role(role):
+    role = (role or "").strip().lower()
+    if role in {"user", "assistant", "system"}:
+        return role
+    return None
+
+
+def _split_conversation_history(conversation, current_user_query):
+    if not conversation:
+        return []
+
+    last_user_index = -1
+    for i in range(len(conversation) - 1, -1, -1):
+        role = (conversation[i].get("role") or "").strip().lower()
+        content = (conversation[i].get("content") or "").strip()
+        if role == "user" and content == current_user_query:
+            last_user_index = i
+            break
+
+    history = conversation[:last_user_index] if last_user_index >= 0 else conversation
+    normalized_history = []
+    for message in history:
+        role = _normalize_history_role(message.get("role"))
+        content = (message.get("content") or "").strip()
+        if not role or not content:
+            continue
+        normalized_history.append({"role": role, "content": content})
+    return normalized_history
+
+
 def generate_search_keywords(client, user_query, intent):
     """LLM을 통해 구글 뉴스 검색어 리스트 생성"""
     language = intent.get("language", "ko")
@@ -110,7 +140,7 @@ def generate_persona(client, user_query):
     return None
 
 
-def build_full_prompt(user_query, context, intent, persona=None):
+def build_system_prompt(intent, persona=None):
     analysis_type = intent.get("analysis_type", "general")
     language      = intent.get("language", "ko")
     system_prompt = SYSTEM_PROMPTS.get(analysis_type, SYSTEM_PROMPTS["general"])
@@ -119,9 +149,6 @@ def build_full_prompt(user_query, context, intent, persona=None):
 
     if persona:
         system_prompt += f"""
-[사용자 질의]
-{user_query}
-
 [선택된 페르소나]
 이름: {persona.name}
 요약: {persona.summary}
@@ -133,26 +160,41 @@ def build_full_prompt(user_query, context, intent, persona=None):
         if persona.famous_quotes:
             system_prompt += f"\n대표 어록: {' / '.join(persona.famous_quotes)}"
 
-    full_prompt = f"""{system_prompt}
+    return system_prompt
+
+
+def build_analysis_input(user_query, context, intent, persona=None, conversation=None):
+    system_prompt = build_system_prompt(intent, persona=persona)
+    history = _split_conversation_history(conversation, user_query)
+
+    input_messages = [{"role": "system", "content": system_prompt}]
+    input_messages.extend(history)
+    input_messages.append(
+        {
+            "role": "user",
+            "content": f"""[현재 사용자 질의]
+{user_query}
 
 [수집된 시장 데이터]
-{context}"""
-    return full_prompt
+{context}""",
+        }
+    )
+    return input_messages
 
-def generate_analysis(client, user_query, context, intent, persona=None):
-    full_prompt = build_full_prompt(user_query, context, intent, persona)
+def generate_analysis(client, user_query, context, intent, persona=None, conversation=None):
+    analysis_input = build_analysis_input(user_query, context, intent, persona, conversation=conversation)
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
     resp = client.responses.create(
         model=LLM_MODEL_NAME,
-        input=full_prompt,
+        input=analysis_input,
     )
 
     result = extract_response_text(resp)
     return result or "(분석 결과를 가져오지 못했습니다)"
 
-def generate_analysis_stream(client, user_query, context, intent, persona=None):
+def generate_analysis_stream(client, user_query, context, intent, persona=None, conversation=None):
    
-    full_prompt = build_full_prompt(user_query, context, intent, persona)
+    analysis_input = build_analysis_input(user_query, context, intent, persona, conversation=conversation)
     llm_model_name = os.environ.get("LLM_MODEL_NAME")
     print(f"[⑤] LLM 분석 스트리밍 생성 중 (Responses API, 모델: {llm_model_name})...")
 
@@ -166,7 +208,7 @@ def generate_analysis_stream(client, user_query, context, intent, persona=None):
     # SDK에 따라 stream API 형태가 다를 수 있어 create(stream=True) 기준으로 처리
     stream = client.responses.create(
         model=llm_model_name,
-        input=full_prompt,
+        input=analysis_input,
         stream=True,
     )
 
