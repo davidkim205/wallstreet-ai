@@ -1,213 +1,217 @@
+<div align="center">
+
+<img src="docs/assets/logo.png" alt="Wallstreet-AI Logo" width="120" />
+
 # Wallstreet-AI
 
-Wallstreet-AI is a financial analysis assistant that combines legendary investor personas with an agentic AI pipeline to interpret prices, fundamentals, earnings, news, and technical indicators, then provide tailored investment insights.
+**An agentic financial analysis assistant powered by legendary investor personas.**
 
-## Overview
+Combine the investment philosophies of Warren Buffett, Charlie Munger, and other market legends with a structured AI pipeline — delivering SWOT analyses, technical reports, earnings breakdowns, and more, all streamed in real time.
 
-Wallstreet-AI is an agentic AI financial analysis assistant that turns user questions into a structured analysis workflow. When the LLM extracts the ticker, analysis type, time period, and target earnings year/quarter from a question, the system selectively gathers price data, fundamentals, technical indicators, earnings information, and news context to assemble a single analysis input.
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-SSE%20Streaming-009688?style=flat-square&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Gradio](https://img.shields.io/badge/Gradio-Web%20UI-FF7C00?style=flat-square&logo=gradio&logoColor=white)](https://gradio.app/)
+[![OpenAI](https://img.shields.io/badge/OpenAI-Responses%20API-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com/)
+[![License](https://img.shields.io/badge/License-See%20LICENSE-6B7280?style=flat-square)](LICENSE)
 
-Then, an OpenAI-based model generates reports such as general, technical, fundamental, earnings, SWOT, news-summary, and comparative analyses from the collected data. It can also apply personas based on the investment philosophies of figures like Warren Buffett, so the perspective and explanation style can change even when the underlying data is the same.
+<p align="center">
+  <a href="README.md">🇺🇸 English</a> |
+  <a href="README_KR.md">🇰🇷 한국어</a>
+</p>
+</div>
 
-Rather than being a simple Q&A chatbot, the project is designed as an analysis system that follows the flow of `intent parsing -> tool routing -> data collection -> news enrichment -> context building -> LLM generation -> result streaming and storage`. It provides a CLI, a FastAPI SSE API, and a Gradio UI so the same core pipeline can be reused for local experiments, web interfaces, and service integrations.
+---
 
-The project provides three entry points.
+## Why Wallstreet-AI?
 
-- `pipeline.py`: CLI-based interactive analysis
-- `api_server.py`: FastAPI analysis API and SSE streaming server
-- `gradio_app.py`: Gradio web UI
+Traditional financial tools give you data. Wallstreet-AI gives you *interpretation*.
 
-## Key Features
+Instead of reading raw numbers, you ask a question the way you'd ask a mentor — and receive a structured, persona-driven analysis that thinks through the data the way a legendary investor would.
 
-- Extracts ticker symbols, analysis types, periods, and year/quarter information from user questions
-- Automatically selects the required data sources based on the analysis type
-- Collects price, fundamentals, news, and earnings data using `yfinance`
-- Calculates technical indicators such as RSI, MACD, moving averages, and Bollinger Bands
-- Collects article bodies from Google News RSS and builds news context
-- Generates analysis reports and streams responses through the OpenAI Responses API
-- Creates and applies investor-style personas
-- Stores analysis results and personas in JSONL files
+- Warren Buffett would ask: *"Does this business have a durable moat?"*
+- Charlie Munger would ask: *"Am I avoiding the big mistakes?"*
+- You just ask: *"Should I be worried about Apple's margins?"*
 
-## Overall Flow
+---
 
-```text
-User question
-  -> Intent parsing
-  -> Tool routing
-  -> Market data collection
-  -> News context generation
-  -> LLM analysis generation
-  -> Result storage (JSONL)
-```
+## What is Wallstreet-AI?
+
+Wallstreet-AI turns a plain-language question like *"What would Warren Buffett think of Apple's latest earnings?"* into a fully structured analysis pipeline:
+
+1. **Intent parsing** — extracts ticker, analysis type, time period, and earnings quarter from your question
+2. **Tool routing** — selects only the data sources required for that analysis type
+3. **Data collection** — fetches prices, fundamentals, technicals, earnings, and news via `yfinance` and Google News RSS
+4. **News enrichment** — scrapes article bodies to build real-time news context
+5. **LLM generation** — streams a tailored report through the OpenAI Responses API
+6. **Result storage** — saves every analysis and persona to JSONL for later review
+
+You can apply an investor persona at any stage. The same underlying data produces a completely different report depending on whether you view it through a value-investing lens or a growth-focused one.
+
+---
 
 ## Demo
 
-![alt text](docs/assets/analyze.gif)
+### Streaming stock analysis
 
-Streaming stock analysis with pipeline progress and final results.
+![Streaming stock analysis with pipeline progress and final results](docs/assets/analyze.gif)
 
+### Persona generation
 
-![alt text](docs/assets/persona.gif)
+![Persona generation and saving based on a financial figure](docs/assets/persona.gif))
 
-Persona generation and saving based on a financial figure.
+---
+
+## Key Features
+
+| Feature | Details |
+|---|---|
+| **Natural-language intent parsing** | Extracts ticker, analysis type, period, and year/quarter automatically |
+| **7 analysis report types** | General · Technical · Fundamental · Earnings · SWOT · News summary · Comparative |
+| **Investor personas** | Warren Buffett, Charlie Munger, and any figure you define — tone and reasoning style adapt to the persona |
+| **Technical indicators** | RSI, MACD, moving averages (SMA/EMA), Bollinger Bands |
+| **Real-time news context** | Google News RSS + `trafilatura` article body extraction |
+| **SSE streaming** | Token-by-token response streaming via FastAPI Server-Sent Events |
+| **Three entry points** | CLI · FastAPI REST API · Gradio web UI |
+| **JSONL logging** | All analyses and personas persisted for reproducibility |
+
+---
 
 ## Quick Start
 
-The easiest way to try it locally is to follow the steps below.
-
-1. Create a virtual environment
+> Requires Python 3.10+ and an OpenAI API key.
 
 ```bash
+# 1. Clone and enter the repo
+git clone https://github.com/davidkim205/wallstreet-ai.git
+cd wallstreet-ai
+
+# 2. Create a virtual environment
 uv venv
-source .venv/bin/activate
-```
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
-2. Install dependencies
-
-```bash
+# 3. Install dependencies
 uv pip install -r requirements.txt
-```
 
-3. Prepare the environment variable file
-
-```bash
+# 4. Set up environment variables
 cp .env.example .env
-```
+# Open .env and add your LLM_MODEL_API_KEY
 
-4. Run the FastAPI server
-
-```bash
+# 5a. Run the FastAPI server (for web UI or API access)
 uvicorn api_server:app --reload
-```
 
-5. Run the Gradio UI
-
-```bash
+# 5b. In a second terminal, launch the Gradio UI
 python gradio_app.py --api-url http://127.0.0.1:8000/analyze/
 ```
 
-6. Open the UI in your browser and enter a question
+Then open your browser at `http://localhost:7860` and ask anything:
 
-If you only want to test the CLI, simply configure `.env` and run `python pipeline.py`.
+> *"Give me a Warren Buffett-style fundamental analysis of Microsoft for the last 2 years"*
+
+To use the CLI only, skip step 5a and run `python pipeline.py` directly.
+
+---
 
 ## Installation
 
-### 1. Prepare the Python environment
+### Python environment
 
-Python 3.10 or later is recommended.
+Python 3.10 or later is recommended. Using `uv` is strongly advised for faster installs:
 
 ```bash
 uv venv
 source .venv/bin/activate
-```
-
-### 2. Install dependencies
-
-```bash
 uv pip install -r requirements.txt
 ```
 
-### 3. Configure environment variables
+### Environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-A basic example is shown below.
+Edit `.env` with your credentials:
 
 ```env
-LLM_MODEL_NAME=gpt-5-mini
-LLM_MODEL_API_KEY=<your api key>
+LLM_MODEL_NAME=gpt-4o-mini
+LLM_MODEL_API_KEY=<your OpenAI API key>
 LOG_FILE=analysis_results.jsonl
 PERSONA_FILE=persona.jsonl
 ```
 
-Environment variables:
+| Variable | Description |
+|---|---|
+| `LLM_MODEL_NAME` | Model name passed to the OpenAI client |
+| `LLM_MODEL_API_KEY` | OpenAI API key (falls back to `OPENAI_API_KEY` if unset) |
+| `LOG_FILE` | Path for analysis result logs (JSONL) |
+| `PERSONA_FILE` | Path for saved investor personas (JSONL) |
 
-- `LLM_MODEL_NAME`: The model name used for OpenAI calls
-- `LLM_MODEL_API_KEY`: Your OpenAI API key
-- `LOG_FILE`: Path for saving analysis results in JSONL format
-- `PERSONA_FILE`: Path for saving personas in JSONL format
-
-In the current codebase, OpenAI client authentication uses `LLM_MODEL_API_KEY` first. If it is not set, it falls back to the OpenAI SDK's default authentication environment.
+---
 
 ## How to Run
 
-### 1. Run the CLI
+### CLI
 
 ```bash
 python pipeline.py
 ```
 
-Behavior:
+At startup the CLI lists saved personas. Enter a persona number to apply it, or press Enter to skip. After entering your question the pipeline runs and prints the full report plus a data summary.
 
-- Shows the list of saved personas at startup
-- Lets you enter a persona number or press Enter to continue without a persona
-- After you enter a question, the analysis result and a summary of the collected data are printed
+Exit with `exit`, `quit`, or `종료`.
 
-Exit commands:
-
-- `exit`
-- `quit`
-- `종료`
-
-### 2. Run the FastAPI server
+### FastAPI server
 
 ```bash
 uvicorn api_server:app --reload
 ```
 
-Default address:
+Starts at `http://127.0.0.1:8000`. Available endpoints:
 
-- API server: `http://127.0.0.1:8000`
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/analyze/` | Run a full analysis (streaming or batch) |
+| `POST` | `/persona/` | Generate and save a new investor persona |
 
-Available endpoints:
+### Gradio UI
 
-- `POST /analyze/`: Run analysis
-- `POST /persona/`: Create a new persona
-
-### 3. Run the Gradio UI
-
-First, run the FastAPI server, then:
+Start the FastAPI server first, then:
 
 ```bash
 python gradio_app.py --api-url http://127.0.0.1:8000/analyze/
 ```
-By default, Gradio binds to `0.0.0.0:7860`.
 
+Default binding: `0.0.0.0:7860`
 
-Options:
+| Option | Description |
+|---|---|
+| `--api-url` | SSE endpoint for the analysis pipeline |
+| `--port` | Gradio server port |
+| `--server-name` | Binding address |
+| `--share` | Generate a public Gradio share link |
 
-- `--api-url`: The analysis SSE endpoint to connect to. The code defaults to `http://0.0.0.0:8000/analyze/`, but for local use it is better to set an explicit address such as `http://127.0.0.1:8000/analyze/`.
-- `--port`: Gradio port
-- `--server-name`: Binding address
-- `--share`: Generate a public link
+The UI has three tabs: **Ask a Question**, **Create a Persona**, and **Investor Profile**.
 
-The Gradio UI has three tabs.
+---
 
-- `Ask a Question`: Submit analysis requests, view streaming responses, and display progress metadata
-- `Create a Persona`: Create and save personas based on financial figures
-- `Investor Profile`: Browse saved investor profiles and personas
+## API Reference
 
-
-## API Usage Examples
-
-### 1. Analysis API
+### Analysis — batch mode
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze/" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "Summarize AAPL's recent earnings and key investment points",
+    "query": "Summarize AAPL recent earnings and key investment points",
     "stream": false
   }'
 ```
 
-Example response:
+Response:
 
 ```json
 {
   "type": "result",
-  "query": "Summarize AAPL's recent earnings and key investment points",
+  "query": "Summarize AAPL recent earnings and key investment points",
   "ticker": "AAPL",
   "analysis_type": "earnings",
   "data_context": {},
@@ -217,40 +221,33 @@ Example response:
 }
 ```
 
-Streaming request example:
+### Analysis — streaming mode
 
 ```bash
 curl -N -X POST "http://127.0.0.1:8000/analyze/" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "Summarize AAPL'\''s recent earnings and key investment points",
-    "stream": true
-  }'
+  -d '{"query": "Summarize AAPL recent earnings", "stream": true}'
 ```
 
-Example SSE event flow:
+SSE event sequence:
 
-```text
-data: {"type":"status","message":"인텐트 분석 중..."}
-
-data: {"type":"stdout","message":"[③] 데이터 수집 중 (ticker=AAPL, period=1y)..."}
-
-data: {"type":"delta","delta":"애플의 최근 실적은 마진 개선 흐름을 보여주며 ..."}
-
+```
+data: {"type":"status","message":"Parsing intent..."}
+data: {"type":"stdout","message":"[③] Collecting data (ticker=AAPL, period=1y)..."}
+data: {"type":"delta","delta":"Apple's most recent quarter shows margin expansion..."}
 data: {"type":"result","ticker":"AAPL","analysis_type":"earnings", ...}
-
 data: {"type":"done"}
 ```
 
-Notes:
+| Event type | Meaning |
+|---|---|
+| `status` | High-level pipeline progress |
+| `stdout` | Server-side log lines |
+| `delta` | Incremental model output tokens |
+| `result` | Final structured payload |
+| `done` | Stream complete |
 
-- `status`: High-level pipeline progress updates
-- `stdout`: Server-side logs emitted during analysis
-- `delta`: Incremental response chunks from the model
-- `result`: Final analysis payload, same as the `stream: false` response
-- `done`: Indicates that the stream has finished
-
-#### Request with a persona
+### Analysis with a persona
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/analyze/" \
@@ -262,75 +259,43 @@ curl -X POST "http://127.0.0.1:8000/analyze/" \
   }'
 ```
 
-### 2. Persona Creation API
+### Create a persona
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/persona/" \
   -H "Content-Type: application/json" \
-  -d '{
-    "info": "Warren Buffett"
-  }'
+  -d '{"info": "Warren Buffett"}'
 ```
+
+---
 
 ## Persona System
 
-This project includes a persona system that changes the tone and style of the analysis.
+The persona system rewrites the analysis prompt to reflect a specific investor's voice and reasoning style. When a persona is active, the model receives:
 
-- `persona/make_persona.py`
-  Creates a persona from input figure information using OpenAI + web search.
-- `persona/persona_loader.py`
-  Loads personas from `persona.jsonl`.
-- `gradio_app.py`
-  Lets users select an existing persona from a dropdown or create a new one.
-
-When a persona is applied, the following elements are added to the analysis prompt.
-
-- Summary of the figure
-- Financial mindset
-- Data analysis style
-- Response style
-- Core principles
+- A summary of the figure's background and track record
+- Their core financial mindset and mental models
+- Their preferred data analysis style (e.g. DCF-focused vs. narrative-focused)
+- Their typical response tone and vocabulary
+- Core investment principles
 - Representative quotes
 
-## Data Sources
+---
 
-- OpenAI API
-  Used for intent parsing, analysis generation, and persona generation
-- `yfinance`
-  Used for price, fundamentals, stock news, financial data, and earnings data
-- Google News RSS
-  Used to search for recent news
-- `trafilatura`
-  Used to extract article bodies
+## Contributing
 
-## Result Storage
+Contributions are welcome. Please open an issue first to discuss significant changes. For small fixes, a pull request with a clear description is sufficient.
 
-### Analysis result logs
-
-`pipeline.py` stores analysis results in JSONL format.
-
-- Default in code: `log_file.jsonl`
-- Example in `.env.example`: `analysis_results.jsonl`
-- Configurable via the `LOG_FILE` environment variable
-
-Stored fields:
-
-- `timestamp`
-- `query`
-- `ticker`
-- `analysis_type`
-- `data_context`
-- `llm_response`
-
-### Persona storage
-
-Created personas are stored in JSONL format.
-
-- Default file: `persona.jsonl`
-- Can be changed via environment variable: `PERSONA_FILE`
-
-Duplicate entries with the same `name` are skipped.
+---
 
 ## License
 
 See [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+*Ask any stock question. Get an answer that thinks like the greats.*
+
+</div>
