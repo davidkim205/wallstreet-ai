@@ -116,12 +116,13 @@ To use the CLI only, skip step 5a and run `python pipeline.py` directly.
 ---
 ## Online Demo
 
-You can try Wallstreet-AI instantly without installing anything.
+You can try Wallstreet-AI instantly without installing anything.<br>
+Click the platform name to open.
 
-| Platform | Link | Description |
-|---|---|---|
-| **Google Colab** | https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H | Run the full pipeline in a hosted notebook. Installs the GitHub repo and allows interactive testing. |
-| **HuggingFace Spaces** | https://huggingface.co/spaces/davidkim205/wallstreet-ai | Live web demo similar to Gradio UI for quick experimentation. |
+| Platform | Description |
+|---|---|
+| [**Google Colab**](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H) | Run the full pipeline in a hosted notebook.<br> Installs the GitHub repo and allows interactive testing. |
+| [**HuggingFace Spaces**](https://huggingface.co/spaces/davidkim205/wallstreet-ai) | Live web demo similar to Gradio UI for quick experimentation. |
 
 ---
 
