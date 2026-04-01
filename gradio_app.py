@@ -500,7 +500,7 @@ IDLE_PANEL = (
 )
 
 
-def stream_analyze(query, persona_name, endpoint):
+def stream_analyze(query, persona_name, endpoint, history=None):
     query = (query or "").strip()
     endpoint = (endpoint or "").strip()
     persona_name = (persona_name or "").strip()
@@ -527,6 +527,8 @@ def stream_analyze(query, persona_name, endpoint):
             body = {"query": query}
             if persona_name and persona_name != "없음":
                 body["persona_name"] = persona_name
+            if history:
+                body["history"] = history
             with requests.post(endpoint, json=body,
                                headers={"Accept": "text/event-stream"},
                                stream=True, timeout=(10, 300)) as resp:
@@ -1279,11 +1281,13 @@ def create_app(default_endpoint):
                         with gr.Row():
                             run_btn   = gr.Button("🔍  Ask Question", variant="primary",
                                                    scale=3, elem_id="run-btn")
-                            clear_btn = gr.Button("Reset", scale=1, elem_id="clear-btn")
+                            clear_btn = gr.Button("Newchat", scale=1, elem_id="clear-btn")
 
                     with gr.Column(scale=1, min_width=300, elem_id="output-col"):
                         output_panel = gr.HTML(value=IDLE_PANEL, show_label=False)
                         timer = gr.Markdown(value="", visible=False)
+
+                chat_history = gr.State([])
 
                 with gr.Row(elem_id="result-json-wrap"):
                     with gr.Column():
@@ -1292,13 +1296,47 @@ def create_app(default_endpoint):
 
                 gr.HTML(AUTO_SCROLL_JS, visible=False)
 
-                def on_run(q, persona, ep):
-                    for panel, t, rj in stream_analyze(q, persona, ep):
+                def on_run(q, persona, ep, history):
+                    for panel, t, rj in stream_analyze(q, persona, ep, history):
                         yield panel, t, rj
 
-                run_btn.click(fn=on_run, inputs=[query_input, persona_dd, endpoint_state], outputs=[output_panel, timer, meta])
-                query_input.submit(fn=on_run, inputs=[query_input, persona_dd, endpoint_state], outputs=[output_panel, timer, meta])
-                clear_btn.click(fn=lambda: (IDLE_PANEL, "", ""), outputs=[output_panel, timer, meta])
+                def update_history(q, rj, history):
+                    new_history = list(history)
+                    new_history.append({"role": "user", "content": q})
+                    try:
+                        result = json.loads(rj)
+                        llm_response = result.get("llm_response", "")
+                        if llm_response:
+                            new_history.append({"role": "assistant", "content": llm_response})
+                    except (json.JSONDecodeError, AttributeError, TypeError):
+                        pass
+                    return new_history
+
+                run_click = run_btn.click(
+                    fn=on_run,
+                    inputs=[query_input, persona_dd, endpoint_state, chat_history],
+                    outputs=[output_panel, timer, meta],
+                )
+                run_then = run_click.then(
+                    fn=update_history,
+                    inputs=[query_input, meta, chat_history],
+                    outputs=[chat_history],
+                )
+                submit_click = query_input.submit(
+                    fn=on_run,
+                    inputs=[query_input, persona_dd, endpoint_state, chat_history],
+                    outputs=[output_panel, timer, meta],
+                )
+                submit_then = submit_click.then(
+                    fn=update_history,
+                    inputs=[query_input, meta, chat_history],
+                    outputs=[chat_history],
+                )
+                clear_btn.click(
+                    fn=lambda: (IDLE_PANEL, "", "", [], "없음", ""),
+                    outputs=[output_panel, timer, meta, chat_history, persona_dd, query_input],
+                    cancels=[run_click, run_then, submit_click, submit_then],
+                )
                 refresh_btn.click(fn=lambda: gr.update(choices=load_persona_names(), value="없음"), outputs=[persona_dd])
 
                 def on_persona_change(name):
