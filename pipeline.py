@@ -69,7 +69,7 @@ def save_result_jsonl(result):
     with open(file_name, "a", encoding="utf-8") as f:
         f.write(json.dumps(ordered_data, ensure_ascii=False) + "\n")
 
-def pipeline(query, conversation=None, persona_name=None, status_callback=None, stream_callback=None, stream=True):
+def pipeline(query, history=None, persona_name=None, status_callback=None, stream_callback=None, stream=True):
     """
     파이프라인:
         ① 인텐트 파싱  (Chat Completions + Function Calling)
@@ -126,7 +126,7 @@ def pipeline(query, conversation=None, persona_name=None, status_callback=None, 
                 context,
                 intent,
                 persona=persona,
-                conversation=conversation,
+                history=history,
             ):
                 if not delta:
                     continue
@@ -143,7 +143,7 @@ def pipeline(query, conversation=None, persona_name=None, status_callback=None, 
                 context,
                 intent,
                 persona=persona,
-                conversation=conversation,
+                history=history,
             )
             if response:
                 emit_delta(response)
@@ -215,7 +215,7 @@ def main():
         except ValueError:
             print("잘못된 입력입니다. 기본 모드로 진행합니다.")
 
-    conversation = []
+    history = []
     print("\n멀티턴 대화 모드입니다. 이전 질문/답변이 다음 분석에 함께 반영됩니다.")
     print("대화 초기화: reset 또는 clear | 종료: exit, quit, 종료")
 
@@ -224,15 +224,17 @@ def main():
         if text.lower() in ("exit", "quit", "종료"):
             break
         if text.lower() in ("reset", "clear"):
-            conversation = []
+            history = []
             print("대화 히스토리를 초기화했습니다.")
             continue
         if not text:
             continue
 
-        current_conversation = conversation + [{"role": "user", "content": text}]
-        result = pipeline(text, conversation=current_conversation, persona_name=persona_name)
-        conversation = current_conversation + [{"role": "assistant", "content": result.llm_response}]
+        result = pipeline(text, history=history, persona_name=persona_name)
+        history = history + [
+            {"role": "user", "content": text},
+            {"role": "assistant", "content": result.llm_response},
+        ]
         print_result(result)
 
 

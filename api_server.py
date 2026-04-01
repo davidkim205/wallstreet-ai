@@ -3,12 +3,12 @@ import sys
 import threading
 from queue import Empty, Queue
 from threading import Thread
-from typing import List, Optional, Union
+from typing import List, Optional
 
 from fastapi import FastAPI
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pipeline import pipeline as run_pipeline
 from persona.make_persona import make_persona
@@ -189,7 +189,8 @@ async def create_persona(request: PersonaRequest):
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=headers)
 
 class QueryRequest(BaseModel):
-    query: Union[str, List["ChatMessage"]]
+    query: str
+    history: List["ChatMessage"] = Field(default_factory=list)
     stream: bool = True
     persona_name: Optional[str] = None
 
@@ -204,15 +205,9 @@ def _normalize_chat_role(role: str) -> str:
     return role
 
 
-def _normalize_query_input(query_input):
-    if isinstance(query_input, str):
-        return query_input.strip(), []
-
-    if not isinstance(query_input, list):
-        return "", []
-
-    conversation = []
-    for message in query_input:
+def _normalize_history_input(history_input):
+    history = []
+    for message in history_input or []:
         if isinstance(message, ChatMessage):
             role = _normalize_chat_role(message.role)
             content = (message.content or "").strip()
@@ -224,15 +219,8 @@ def _normalize_query_input(query_input):
 
         if not role or not content:
             continue
-        conversation.append({"role": role, "content": content})
-
-    current_user_query = ""
-    for message in reversed(conversation):
-        if message["role"] == "user":
-            current_user_query = message["content"]
-            break
-
-    return current_user_query, conversation
+        history.append({"role": role, "content": content})
+    return history
 
 
 def _sse(payload: dict) -> str:
@@ -256,7 +244,8 @@ def _build_result_payload(result, stdout: str = "") -> dict:
 
 @app.post("/analyze/")
 async def analyze(request: QueryRequest):
-    query, conversation = _normalize_query_input(request.query)
+    query = (request.query or "").strip()
+    history = _normalize_history_input(request.history)
     stream = request.stream
 
     persona_name = (request.persona_name or "").strip() or None
@@ -285,7 +274,7 @@ async def analyze(request: QueryRequest):
         try:
             result = run_pipeline(
                 query,
-                conversation=conversation,
+                history=history,
                 persona_name=persona_name,
                 status_callback=None,
                 stream_callback=None,
@@ -313,7 +302,7 @@ async def analyze(request: QueryRequest):
             try:
                 result = run_pipeline(
                     query,
-                    conversation=conversation,
+                    history=history,
                     persona_name=persona_name,
                     status_callback=on_status,
                     stream_callback=on_delta if stream else None,

@@ -31,19 +31,10 @@ def _normalize_history_role(role):
     return None
 
 
-def _split_conversation_history(conversation, current_user_query):
-    if not conversation:
+def _normalize_history(history):
+    if not history:
         return []
 
-    last_user_index = -1
-    for i in range(len(conversation) - 1, -1, -1):
-        role = (conversation[i].get("role") or "").strip().lower()
-        content = (conversation[i].get("content") or "").strip()
-        if role == "user" and content == current_user_query:
-            last_user_index = i
-            break
-
-    history = conversation[:last_user_index] if last_user_index >= 0 else conversation
     normalized_history = []
     for message in history:
         role = _normalize_history_role(message.get("role"))
@@ -163,12 +154,12 @@ def build_system_prompt(intent, persona=None):
     return system_prompt
 
 
-def build_analysis_input(user_query, context, intent, persona=None, conversation=None):
+def build_analysis_input(user_query, context, intent, persona=None, history=None):
     system_prompt = build_system_prompt(intent, persona=persona)
-    history = _split_conversation_history(conversation, user_query)
+    normalized_history = _normalize_history(history)
 
     input_messages = [{"role": "system", "content": system_prompt}]
-    input_messages.extend(history)
+    input_messages.extend(normalized_history)
     input_messages.append(
         {
             "role": "user",
@@ -181,8 +172,8 @@ def build_analysis_input(user_query, context, intent, persona=None, conversation
     )
     return input_messages
 
-def generate_analysis(client, user_query, context, intent, persona=None, conversation=None):
-    analysis_input = build_analysis_input(user_query, context, intent, persona, conversation=conversation)
+def generate_analysis(client, user_query, context, intent, persona=None, history=None):
+    analysis_input = build_analysis_input(user_query, context, intent, persona, history=history)
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
     resp = client.responses.create(
         model=LLM_MODEL_NAME,
@@ -192,9 +183,9 @@ def generate_analysis(client, user_query, context, intent, persona=None, convers
     result = extract_response_text(resp)
     return result or "(분석 결과를 가져오지 못했습니다)"
 
-def generate_analysis_stream(client, user_query, context, intent, persona=None, conversation=None):
+def generate_analysis_stream(client, user_query, context, intent, persona=None, history=None):
    
-    analysis_input = build_analysis_input(user_query, context, intent, persona, conversation=conversation)
+    analysis_input = build_analysis_input(user_query, context, intent, persona, history=history)
     llm_model_name = os.environ.get("LLM_MODEL_NAME")
     print(f"[⑤] LLM 분석 스트리밍 생성 중 (Responses API, 모델: {llm_model_name})...")
 
