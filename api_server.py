@@ -1,6 +1,8 @@
 import json
 import sys
 import threading
+import time
+import uuid
 from queue import Empty, Queue
 from threading import Thread
 from typing import Optional
@@ -14,6 +16,11 @@ from pipeline import pipeline as run_pipeline
 from persona.make_persona import make_persona
 
 app = FastAPI()
+
+SESSION_TTL_SECONDS = 3600
+MAX_MESSAGES_PER_SESSION = 10
+SESSION_STORE = {}
+SESSION_LOCK = threading.RLock()
 
 
 class _ThreadStdoutProxy:
@@ -192,10 +199,51 @@ class QueryRequest(BaseModel):
     query: str
     stream: bool = True
     persona_name: Optional[str] = None
+    session_id: Optional[str] = None
 
 
-def _sse(payload: dict) -> str:
+def _sse(payload):
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def cleanup_sessions():
+    now = time.time()
+    expired_ids = []
+
+    with SESSION_LOCK:
+        for session_id, session in SESSION_STORE.items():
+            updated_at = session.get("updated_at", 0)
+            if now - updated_at > SESSION_TTL_SECONDS:
+                expired_ids.append(session_id)
+
+        for session_id in expired_ids:
+            SESSION_STORE.pop(session_id, None)
+
+
+def get_conversation_history(session_id):
+    if not session_id:
+        return []
+
+    with SESSION_LOCK:
+        session = SESSION_STORE.get(session_id)
+        if not session:
+            return []
+        return [dict(message) for message in session.get("messages", [])]
+
+
+def append_conversation_message(session_id, role, content):
+    if not session_id or not content:
+        return
+
+    with SESSION_LOCK:
+        session = SESSION_STORE.setdefault(session_id, {"messages": [], "updated_at": time.time()})
+        session["messages"].append({
+            "role": role,
+            "content": content,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        })
+        session["messages"] = session["messages"][-MAX_MESSAGES_PER_SESSION:]
+        session["updated_at"] = time.time()
 
 
 def _build_result_payload(result, stdout: str = "") -> dict:
@@ -207,6 +255,7 @@ def _build_result_payload(result, stdout: str = "") -> dict:
         "data_context": result.data_context,
         "llm_response": result.llm_response,
         "timestamp": getattr(result, "timestamp", None),
+        "session_id": getattr(result, "session_id", None),
     }
     if stdout:
         payload["stdout"] = stdout
@@ -219,6 +268,10 @@ async def analyze(request: QueryRequest):
     stream = request.stream
 
     persona_name = (request.persona_name or "").strip() or None
+    session_id = (request.session_id or "").strip() or str(uuid.uuid4())
+
+    cleanup_sessions()
+    conversation_history = get_conversation_history(session_id)
 
     if not stream:
         stdout_messages = []
@@ -242,12 +295,16 @@ async def analyze(request: QueryRequest):
             result = run_pipeline(
                 query,
                 persona_name=persona_name,
+                conversation_history=conversation_history,
+                session_id=session_id,
                 status_callback=None,
                 stream_callback=None,
                 stream=False,
             )
         finally:
             _stdout_proxy.unregister(thread_id)
+        append_conversation_message(session_id, "user", query)
+        append_conversation_message(session_id, "assistant", result.llm_response)
         return JSONResponse(
             content=jsonable_encoder(_build_result_payload(result, stdout="".join(stdout_messages)))
         )
@@ -269,10 +326,14 @@ async def analyze(request: QueryRequest):
                 result = run_pipeline(
                     query,
                     persona_name=persona_name,
+                    conversation_history=conversation_history,
+                    session_id=session_id,
                     status_callback=on_status,
                     stream_callback=on_delta if stream else None,
                     stream=stream,
                 )
+                append_conversation_message(session_id, "user", query)
+                append_conversation_message(session_id, "assistant", result.llm_response)
                 event_queue.put(_build_result_payload(result))
             except Exception as exc:
                 event_queue.put({"type": "error", "message": str(exc)})

@@ -10,6 +10,7 @@ class AnalysisResult:
     analysis_type: str
     data_context: dict
     llm_response: str
+    session_id: str | None = None
     timestamp: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 @dataclass

@@ -69,7 +69,7 @@ def save_result_jsonl(result):
     with open(file_name, "a", encoding="utf-8") as f:
         f.write(json.dumps(ordered_data, ensure_ascii=False) + "\n")
 
-def pipeline(query, persona_name=None, status_callback=None, stream_callback=None, stream=True):
+def pipeline(query, persona_name=None, conversation_history=None, session_id=None, status_callback=None, stream_callback=None, stream=True):
     """
     파이프라인:
         ① 인텐트 파싱  (Chat Completions + Function Calling)
@@ -81,6 +81,7 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
     global client
     timings = {}
     start_total = time.time()
+    conversation_history = conversation_history or []
 
     persona = get_persona(persona_name) if persona_name else None
     def emit_status(message: str):
@@ -99,7 +100,7 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
 
     emit_status("인텐트 분석 중...")
     with timed(timings, 'intent_parse'):
-        intent = parse_intent(client, query)
+        intent = parse_intent(client, query, conversation_history=conversation_history)
 
     emit_status("도구 라우팅 중...")
     with timed(timings, 'tool_route'):
@@ -120,7 +121,7 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
         if stream:
             chunks = []
             print("[⑤] 스트리밍 응답 수신 중...")
-            for delta in generate_analysis_stream(client, query, context, intent, persona=persona):
+            for delta in generate_analysis_stream(client, query, context, intent, persona=persona, conversation_history=conversation_history):
                 if not delta:
                     continue
                 chunks.append(delta)
@@ -130,7 +131,7 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
             response = "".join(chunks).strip() or "(분석 결과를 가져오지 못했습니다)"
         else:
             print("[⑤] 단일 응답 생성 중...")
-            response = generate_analysis(client, query, context, intent, persona=persona)
+            response = generate_analysis(client, query, context, intent, persona=persona, conversation_history=conversation_history)
             if response:
                 emit_delta(response)
 
@@ -141,7 +142,8 @@ def pipeline(query, persona_name=None, status_callback=None, stream_callback=Non
         ticker=intent.get("ticker", ""),
         analysis_type=intent.get("analysis_type", "general"),
         data_context=market_data,
-        llm_response=response
+        llm_response=response,
+        session_id=session_id,
     )
 
     save_result_jsonl(result)

@@ -31,8 +31,31 @@ def route_tools(intent):
     return selected
 
 
-def parse_intent(client, user_query):
+def _format_history_for_intent(conversation_history, max_messages=4):
+    if not conversation_history:
+        return ""
+
+    lines = []
+    for message in conversation_history[-max_messages:]:
+        role = message.get("role", "user")
+        label = "사용자" if role == "user" else "어시스턴트"
+        content = (message.get("content") or "").strip()
+        if content:
+            lines.append(f"{label}: {content}")
+    return "\n".join(lines)
+
+
+def parse_intent(client, user_query, conversation_history=None):
     LLM_MODEL_NAME = os.environ.get('LLM_MODEL_NAME')
+    history_text = _format_history_for_intent(conversation_history or [])
+    user_content = user_query
+    if history_text:
+        user_content = (
+            "[최근 대화]\n"
+            f"{history_text}\n\n"
+            "[현재 사용자 질의]\n"
+            f"{user_query}"
+        )
     INTENT_TOOL = {
         "type": "function",
         "function": {
@@ -61,6 +84,8 @@ def parse_intent(client, user_query):
                 "content": (
                     "당신은 투자 분석 시스템의 인텐트 파서입니다. "
                     "사용자의 질의에서 분석에 필요한 정보를 정확히 추출하세요. "
+                    "최근 대화가 주어지면 현재 질의 해석에 필요한 범위에서만 참고하고, "
+                    "현재 질의에 명시된 조건이 이전 대화보다 우선합니다. "
                     "한국 주식은 '.KS'(코스피) 또는 '.KQ'(코스닥) 접미사를 붙이세요. "
                     "삼성전자 → 005930.KS, SK하이닉스 → 000660.KS, LG에너지솔루션 → 373220.KS, "
                     "현대차 → 005380.KS, 카카오 → 035720.KS, 네이버 → 035420.KS. "
@@ -68,7 +93,7 @@ def parse_intent(client, user_query):
                     "'earnings'로 분류하고 언급된 연도·분기를 채우세요."
                 )
             },
-            {"role": "user", "content": user_query}
+            {"role": "user", "content": user_content}
         ],
         tools=[INTENT_TOOL],
         tool_choice={"type": "function", "function": {"name": "parse_investment_intent"}}
