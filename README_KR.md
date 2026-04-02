@@ -20,7 +20,7 @@ Warren Buffett, Charlie Munger 등 전설적인 투자자들의 철학을 반영
 
 <p align="center">
   <a href="README.md">🇺🇸 English</a> |
-  <a href="README_KR.md">🇰🇷 한국어</a>
+  <a href="README_kr.md">🇰🇷 한국어</a>
 </p>
 </div>
 
