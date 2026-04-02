@@ -134,10 +134,20 @@ def generate_persona(client, user_query):
 def build_system_prompt(intent, persona=None):
     analysis_type = intent.get("analysis_type", "general")
     language      = intent.get("language", "ko")
-    system_prompt = SYSTEM_PROMPTS.get(analysis_type, SYSTEM_PROMPTS["general"])
-    
-    system_prompt += f"\n\n반드시 {language} 언어로 답변하세요. 투자 조언이 아닌 정보 제공임을 명시하세요."
+    system_prompt = f"""
+[공통 규칙]
+- 반드시 사용자의 질문에 직접 답하는 내용부터 먼저 제시하세요.
+- 내부 로드맵 항목은 답변을 구성하기 위한 참고용이며, 그대로 제목 형식으로 출력할 필요는 없습니다.
 
+[출력 규칙]
+- 반드시 {language} 언어로 작성하세요.
+- 마크다운 포맷으로 작성하세요.
+- 투자 자문이 아닌 정보 제공 목적임을 자연스럽게 명시하세요.
+""".strip()
+
+    analysis_prompt = SYSTEM_PROMPTS.get(analysis_type, SYSTEM_PROMPTS["general"]).strip()
+    system_prompt += f"\n\n[분석 지침]\n{analysis_prompt}"
+    
     if persona:
         system_prompt += f"""
 [선택된 페르소나]
