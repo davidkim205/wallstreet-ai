@@ -61,7 +61,7 @@ You can apply an investor persona at any stage. The same underlying data produce
 
 ### Persona generation
 
-![Persona generation and saving based on a financial figure](docs/assets/persona.gif))
+![Persona generation and saving based on a financial figure](docs/assets/persona.gif)
 
 ---
 
@@ -234,6 +234,23 @@ Response:
   "timestamp": "2026-03-30 10:00:00",
   "stdout": "..."
 }
+```
+
+### Analysis — multi-turn conversation
+
+Send the current question in `query` and the previous turns in `history`.
+
+```bash
+curl -X POST "http://127.0.0.1:8000/analyze/" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Was it up compared with Q3?",
+    "history": [
+      {"role": "user", "content": "What was NVIDIA revenue in Q4 FY2025?"},
+      {"role": "assistant", "content": "Revenue was about $68.1 billion."}
+    ],
+    "stream": false
+  }'
 ```
 
 ### Analysis — streaming mode
