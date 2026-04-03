@@ -73,16 +73,16 @@ You can apply an investor persona at any stage. The same underlying data produce
 
 ## Key Features
 
-| Feature | Details |
-|---|---|
-| **Natural-language intent parsing** | Extracts ticker, analysis type, period, and year/quarter automatically |
-| **7 analysis report types** | General · Technical · Fundamental · Earnings · SWOT · News summary · Comparative |
-| **Investor personas** | Warren Buffett, Charlie Munger, and any figure you define — tone and reasoning style adapt to the persona |
-| **Technical indicators** | RSI, MACD, moving averages (SMA/EMA), Bollinger Bands |
-| **Real-time news context** | Google News RSS + `trafilatura` article body extraction |
-| **SSE streaming** | Token-by-token response streaming via FastAPI Server-Sent Events |
-| **Three entry points** | CLI · FastAPI REST API · Gradio web UI |
-| **JSONL logging** | All analyses and personas persisted for reproducibility |
+| Feature                             | Details                                                                                                   |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Natural-language intent parsing** | Extracts ticker, analysis type, period, and year/quarter automatically                                    |
+| **7 analysis report types**         | General · Technical · Fundamental · Earnings · SWOT · News summary · Comparative                          |
+| **Investor personas**               | Warren Buffett, Charlie Munger, and any figure you define — tone and reasoning style adapt to the persona |
+| **Technical indicators**            | RSI, MACD, moving averages (SMA/EMA), Bollinger Bands                                                     |
+| **Real-time news context**          | Google News RSS + `trafilatura` article body extraction                                                   |
+| **SSE streaming**                   | Token-by-token response streaming via FastAPI Server-Sent Events                                          |
+| **Three entry points**              | CLI · FastAPI REST API · Gradio web UI                                                                    |
+| **JSONL logging**                   | All analyses and personas persisted for reproducibility                                                   |
 
 ---
 
@@ -125,10 +125,10 @@ To use the CLI only, skip step 5a and run `python pipeline.py` directly.
 You can try Wallstreet-AI instantly without installing anything.<br>
 Click the platform name to open.
 
-| Platform | Description |
-|---|---|
+| Platform                                                                                      | Description                                                                                              |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | [**Google Colab**](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H) | Run the full pipeline in a hosted notebook.<br> Installs the GitHub repo and allows interactive testing. |
-| [**HuggingFace Spaces**](https://huggingface.co/spaces/davidkim205/wallstreet-ai) | Live web demo similar to Gradio UI for quick experimentation. |
+| [**HuggingFace Spaces**](https://huggingface.co/spaces/davidkim205/wallstreet-ai)             | Live web demo similar to Gradio UI for quick experimentation.                                            |
 
 ---
 
@@ -159,12 +159,12 @@ LOG_FILE=analysis_results.jsonl
 PERSONA_FILE=persona.jsonl
 ```
 
-| Variable | Description |
-|---|---|
-| `LLM_MODEL_NAME` | Model name passed to the OpenAI client |
+| Variable            | Description                                              |
+| ------------------- | -------------------------------------------------------- |
+| `LLM_MODEL_NAME`    | Model name passed to the OpenAI client                   |
 | `LLM_MODEL_API_KEY` | OpenAI API key (falls back to `OPENAI_API_KEY` if unset) |
-| `LOG_FILE` | Path for analysis result logs (JSONL) |
-| `PERSONA_FILE` | Path for saved investor personas (JSONL) |
+| `LOG_FILE`          | Path for analysis result logs (JSONL)                    |
+| `PERSONA_FILE`      | Path for saved investor personas (JSONL)                 |
 
 ---
 
@@ -188,8 +188,8 @@ uvicorn api_server:app --reload
 
 Starts at `http://127.0.0.1:8000`. Available endpoints:
 
-| Method | Endpoint | Description |
-|---|---|---|
+| Method | Endpoint    | Description                              |
+| ------ | ----------- | ---------------------------------------- |
 | `POST` | `/analyze/` | Run a full analysis (streaming or batch) |
 | `POST` | `/persona/` | Generate and save a new investor persona |
 
@@ -203,12 +203,12 @@ python gradio_app.py --api-url http://127.0.0.1:8000/analyze/
 
 Default binding: `0.0.0.0:7860`
 
-| Option | Description |
-|---|---|
-| `--api-url` | SSE endpoint for the analysis pipeline |
-| `--port` | Gradio server port |
-| `--server-name` | Binding address |
-| `--share` | Generate a public Gradio share link |
+| Option          | Description                            |
+| --------------- | -------------------------------------- |
+| `--api-url`     | SSE endpoint for the analysis pipeline |
+| `--port`        | Gradio server port                     |
+| `--server-name` | Binding address                        |
+| `--share`       | Generate a public Gradio share link    |
 
 The UI has three tabs: **Ask a Question**, **Create a Persona**, and **Investor Profile**.
 
@@ -277,13 +277,13 @@ data: {"type":"result","ticker":"AAPL","analysis_type":"earnings", ...}
 data: {"type":"done"}
 ```
 
-| Event type | Meaning |
-|---|---|
-| `status` | High-level pipeline progress |
-| `stdout` | Server-side log lines |
-| `delta` | Incremental model output tokens |
-| `result` | Final structured payload |
-| `done` | Stream complete |
+| Event type | Meaning                         |
+| ---------- | ------------------------------- |
+| `status`   | High-level pipeline progress    |
+| `stdout`   | Server-side log lines           |
+| `delta`    | Incremental model output tokens |
+| `result`   | Final structured payload        |
+| `done`     | Stream complete                 |
 
 ### Analysis with a persona
 
@@ -309,14 +309,25 @@ curl -X POST "http://127.0.0.1:8000/persona/" \
 
 ## Persona System
 
-The persona system rewrites the analysis prompt to reflect a specific investor's voice and reasoning style. When a persona is active, the model receives:
+The persona system rewrites the analysis prompt to reflect a specific investor's voice, reasoning style, and investment philosophy. When a persona is active, the model incorporates the figure's background, financial mindset, analytical approach, response style, core principles, and representative quotes.
 
-- A summary of the figure's background and track record
-- Their core financial mindset and mental models
-- Their preferred data analysis style (e.g. DCF-focused vs. narrative-focused)
-- Their typical response tone and vocabulary
-- Core investment principles
-- Representative quotes
+Each persona is stored in `persona.jsonl` with a name, profile image, and investing philosophy.
+
+<p align="center">
+  <img src="persona/images/Warren_Buffett.png" alt="Warren Buffett portrait" width="120" />
+  <img src="persona/images/Ray_Dalio.png" alt="Ray Dalio portrait" width="120" />
+  <img src="persona/images/J._P._Morgan.png" alt="J. P. Morgan portrait" width="120" />
+  <img src="persona/images/Jim_Rogers.png" alt="Jim Rogers portrait" width="120" />
+  <img src="persona/images/Kenneth_Griffin.png" alt="Kenneth Griffin portrait" width="120" />
+</p>
+
+| Persona | Core Philosophy | Analysis Lens |
+|---|---|---|
+| Warren Buffett | Long-term value investing focused on moat, cash flow, and intrinsic value | Business quality and downside risk |
+| Ray Dalio | Global macro investing centered on diversification and economic cycles | Regime shifts, rates, and portfolio balance |
+| J. P. Morgan | Capital discipline and financial control during periods of instability | Credit conditions, structure, and market stability |
+| Jim Rogers | Contrarian macro investing with emphasis on real assets and long-term cycles | Commodities, global trends, and policy risk |
+| Kenneth Griffin | Data-driven multi-strategy investing with strict risk management | Market structure, execution, and risk-adjusted returns |
 
 ---
 
