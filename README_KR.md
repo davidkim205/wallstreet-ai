@@ -57,9 +57,20 @@ Wallstreet-AI는 *"워런 버핏은 애플의 최근 실적을 어떻게 볼까?
 
 ### 실시간 주식 분석
 
-![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_apple.gif)
 
-![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_samsung.gif)
+### Warren Buffett
+
+- 질문 : 글로벌 경기 침체가 예상되는 상황에서 삼성전자 주식을 장기 보유하는 것이 합리적인가?
+- 답변 : 삼성전자는 재무력·현금흐름·주주환원 측면에서 장기적 가치의 요소를 많이 갖고 있지만, 메모리와 소비재의 경기 민감성은 안전마진 확보를 요구합니다. 침체를 걱정한다면 포지션 크기와 매수 가격을 조절하고, 업황·현금흐름·배당 정책의 변화가 있을 때마다 재평가하십시오.
+
+![Streaming Samsung Electronics stock analysis with the Warren Buffett persona](docs/assets/analysis_samsung_warren_buffett.gif)
+
+### Ray Dalio
+
+- 질문 : 글로벌 경기 침체가 예상되는 상황에서 삼성전자 주식을 장기 보유하는 것이 합리적인가?
+- 답변 : 삼성전자는 재무·현금흐름·시장지위 측면에서 경기침체 시에도 방어력이 비교적 강한 대형주입니다. 현재 밸류에이션도 매수 매력에 해당합니다. 그러나 반도체(메모리)의 사이클성, 지정학·관세·환율 리스크를 반드시 고려해 포지션 크기와 분산전략을 세우세요. 장기(5년 이상) 관점에서 리스크를 분산하고 정기적으로 핵심 지표를 점검하면 보유는 합리적 선택입니다.
+
+![Streaming Samsung Electronics stock analysis with the Ray Dalio persona](docs/assets/analysis_samsung_ray_dalio.gif)
 
 ---
 
