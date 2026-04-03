@@ -57,11 +57,9 @@ Wallstreet-AI는 *"워런 버핏은 애플의 최근 실적을 어떻게 볼까?
 
 ### 실시간 주식 분석
 
-![Streaming stock analysis with pipeline progress and final results](docs/assets/analyze.gif)
+![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_apple.gif)
 
-### 페르소나 생성
-
-![Persona generation and saving based on a financial figure](docs/assets/persona.gif)
+![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_samsung.gif)
 
 ---
 

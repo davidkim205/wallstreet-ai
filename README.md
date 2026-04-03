@@ -57,11 +57,9 @@ You can apply an investor persona at any stage. The same underlying data produce
 
 ### Streaming stock analysis
 
-![Streaming stock analysis with pipeline progress and final results](docs/assets/analyze.gif)
+![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_apple.gif)
 
-### Persona generation
-
-![Persona generation and saving based on a financial figure](docs/assets/persona.gif)
+![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_samsung.gif)
 
 ---
 
