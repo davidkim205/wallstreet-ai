@@ -57,9 +57,17 @@ You can apply an investor persona at any stage. The same underlying data produce
 
 ### Streaming stock analysis
 
-![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_apple.gif)
+### Warren Buffett
+- Question : Is Apple still an attractive long-term investment in a high interest rate environment?
+- Answer : Apple remains a compelling long-term investment due to its strong business quality and cash generation, but in a high interest rate environment, elevated valuation can increase downside risk. Long-term investors should approach it with an ownership mindset, carefully considering both fundamentals and the discount rate when determining entry price and a disciplined, staggered buying strategy.
 
-![Streaming stock analysis with pipeline progress and final results](docs/assets/analysis_samsung.gif)
+![Streaming Apple stock analysis with the Warren Buffett persona](docs/assets/analysis_apple_warren_buffett.gif)
+
+### Ray Dalio
+- Question : Is Apple still an attractive long-term investment in a high interest rate environment?
+- Answer : Apple can still fit in a long-term portfolio given its margins, ecosystem, and financial flexibility, but its current premium valuation means it is not an automatic buy, especially in a high interest rate environment. Investors should determine entry timing and position sizing based on their required return, while balancing diversification and overall portfolio risk.
+
+![Streaming Apple stock analysis with the Ray Dalio persona](docs/assets/analysis_apple_ray_dalio.gif)
 
 ---
 
