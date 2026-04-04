@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.png" alt="Wallstreet-AI Logo" />
+<img src="docs/assets/logo.png" alt="Wallstreet-AI Logo" width="75%"/>
 
 # Wallstreet-AI
 
