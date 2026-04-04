@@ -24,6 +24,14 @@ IMAGE_CACHE_DIR.mkdir(exist_ok=True)
 
 LOCAL_IMAGE_DIR = Path(os.environ.get("LOCAL_IMAGE_DIR", Path(__file__).parent / "persona_images"))
 DEFAULT_IMAGE_FILENAME = "default.png"
+APP_ROOT = Path(__file__).resolve().parent
+APP_LOGO_PATH = APP_ROOT / "docs" / "assets" / "logo.png"
+
+README_LINKS = {
+    "deepwiki": "https://deepwiki.com/davidkim205/wallstreet-ai",
+    "colab": "https://drive.google.com/file/d/13rWqKpAgJMytsztSt_spsws4HPWQZPnc/view?usp=sharing",
+    "github": "https://github.com/davidkim205/wallstreet-ai",
+}
 
 _openai_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -90,6 +98,17 @@ def _safe(text):
     t = re.sub(r'[ \t]{2,}', ' ', t).strip()
     t = re.sub(r'\.\s*\.', '.', t)
     return html_lib.escape(t).replace("\n", "<br>")
+
+
+def _image_to_data_url(path: Path) -> str:
+    if not path.exists():
+        return ""
+    suffix = path.suffix.lower().lstrip(".") or "png"
+    mime = "jpeg" if suffix in {"jpg", "jpeg"} else suffix
+    return f"data:image/{mime};base64,{base64.b64encode(path.read_bytes()).decode('ascii')}"
+
+
+APP_LOGO_DATA_URL = _image_to_data_url(APP_LOGO_PATH)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -791,6 +810,103 @@ CSS = """
 }
 #ws-header h1 { font-size:22px !important; font-weight:700 !important; color:#0b3b39 !important; margin:0 0 4px !important; }
 #ws-header p  { font-size:13px !important; color:var(--ws-muted) !important; margin:0 !important; }
+#ws-header .ws-header-main {
+    display:grid;
+    grid-template-columns:minmax(200px, 280px) minmax(0, 1fr);
+    gap:22px;
+    align-items:center;
+    margin-bottom:16px;
+}
+#ws-header .ws-logo-shell {
+    position:relative;
+    border-radius:20px;
+    padding:18px;
+    background:linear-gradient(160deg,rgba(255,255,255,.94) 0%,rgba(233,252,247,.88) 100%);
+    border:1px solid rgba(15,118,110,.15);
+    box-shadow:0 14px 32px rgba(15,118,110,.08);
+    min-height:140px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+#ws-header .ws-logo-shell::after {
+    content:"";
+    position:absolute;
+    inset:12px;
+    border-radius:14px;
+    border:1px solid rgba(20,184,166,.12);
+    pointer-events:none;
+}
+#ws-header .ws-logo {
+    max-width:100%;
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+#ws-header .ws-logo img {
+    width:min(100%, 250px);
+    height:auto;
+    display:block;
+    filter:drop-shadow(0 12px 20px rgba(15,118,110,.08));
+}
+#ws-header .ws-brand-copy {
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+}
+#ws-header .ws-title-row {
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:10px;
+}
+#ws-header .ws-title-kicker {
+    display:inline-flex;
+    align-items:center;
+    padding:5px 10px;
+    border-radius:999px;
+    background:rgba(15,118,110,.1);
+    border:1px solid rgba(15,118,110,.2);
+    color:var(--ws-accent);
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+}
+#ws-header .ws-header-summary {
+    max-width: 820px;
+    font-size:14px !important;
+    line-height:1.7 !important;
+    color:#23403f !important;
+    margin:0 0 14px !important;
+}
+#ws-header .ws-link-row {
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin:0;
+}
+#ws-header .ws-header-link {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:7px 12px;
+    border-radius:999px;
+    text-decoration:none;
+    font-size:12px;
+    font-weight:600;
+    color:#0f5e58;
+    background:rgba(255,255,255,.84);
+    border:1px solid rgba(15,118,110,.18);
+    box-shadow:0 1px 2px rgba(15,23,42,.04);
+    transition:background .15s,border-color .15s,color .15s;
+}
+#ws-header .ws-header-link:hover {
+    background:#ffffff;
+    border-color:rgba(15,118,110,.34);
+    color:#0b3b39;
+}
 #ws-header .ws-badge {
     display:inline-block; padding:1px 8px; border-radius:20px;
     font-size:10px; font-weight:700; letter-spacing:.07em; text-transform:uppercase;
@@ -1121,19 +1237,44 @@ body:has(.options:not(.hide)) { overflow:hidden!important; }
     .pf-right-section { height:auto!important; min-height:160px!important; max-height:none!important; }
     :root { --panel-height:500px; }
     #output-col { max-height:none!important; }
+    #ws-header { padding:18px 18px 14px; }
+    #ws-header .ws-header-main { grid-template-columns:1fr; gap:16px; }
+    #ws-header .ws-logo-shell { min-height:unset; padding:14px; }
 }
 
 .edit-panel { background:var(--ws-surface); border:1px solid var(--ws-border); border-radius:14px; padding:18px 20px; box-shadow:0 2px 12px rgba(16,24,40,.04); }
 .edit-panel label { font-size:12px!important; font-weight:600!important; color:var(--ws-muted)!important; }
 """
 
-HEADER_HTML = """
+_HEADER_LOGO_HTML = (
+    f'<img src="{APP_LOGO_DATA_URL}" alt="Wallstreet-AI logo">'
+    if APP_LOGO_DATA_URL
+    else '<div class="ws-title-kicker">Wallstreet-AI</div>'
+)
+
+HEADER_HTML = f"""
 <div id="ws-header">
-  <h1>📈 Wallstreet AI</h1>
-  <p>
-    Financial analysis assistant combining legendary investor personas with
-    prices, fundamentals, earnings, news, and technical indicators
-  </p>
+  <div class="ws-header-main">
+    <div class="ws-logo-shell">
+      <div class="ws-logo">{_HEADER_LOGO_HTML}</div>
+    </div>
+    <div class="ws-brand-copy">
+      <div class="ws-title-row">
+        <span class="ws-title-kicker">Agentic Finance</span>
+        <span class="ws-badge">Persona-Driven Analysis</span>
+        <span class="ws-badge">Real-Time Streaming</span>
+      </div>
+      <h1>Wallstreet AI</h1>
+      <p class="ws-header-summary">
+        Wallstreet-AI combines legendary investor personas with prices, fundamentals, earnings, news, and technical indicators to turn plain-language questions into structured financial analysis.
+      </p>
+      <div class="ws-link-row">
+        <a class="ws-header-link" href="{README_LINKS['github']}" target="_blank" rel="noopener noreferrer">GitHub</a>
+        <a class="ws-header-link" href="{README_LINKS['colab']}" target="_blank" rel="noopener noreferrer">Google Colab</a>
+        <a class="ws-header-link" href="{README_LINKS['deepwiki']}" target="_blank" rel="noopener noreferrer">DeepWiki</a>
+      </div>
+    </div>
+  </div>
 </div>
 """
 
@@ -1455,7 +1596,6 @@ def create_app(default_endpoint):
 def main():
     parser = argparse.ArgumentParser(description="Wallstreet-AI Gradio UI")
     parser.add_argument("--api-url",     type=str, default=DEFAULT_ENDPOINT)
-    parser.add_argument("--share",       action="store_true")
     parser.add_argument("--server-name", type=str, default="0.0.0.0")
     parser.add_argument("--port",        type=int, default=7860)
     args = parser.parse_args()
@@ -1465,7 +1605,7 @@ def main():
 
     app, theme = create_app(args.api_url)
     app.queue(default_concurrency_limit=8, max_size=64)
-    app.launch(share=args.share, server_name=args.server_name,
+    app.launch(share=True, server_name=args.server_name,
                server_port=args.port, debug=True,
                theme=theme, css=CSS)
 
