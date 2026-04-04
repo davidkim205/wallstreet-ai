@@ -15,7 +15,7 @@ Combine the investment philosophies of Warren Buffett, Charlie Munger, and other
 
 [![deepwiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkim205/wallstreet-ai)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://drive.google.com/file/d/13rWqKpAgJMytsztSt_spsws4HPWQZPnc/view?usp=sharing)
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/davidkim205/wallstreet-ai)
 
 <p align="center">
@@ -127,7 +127,7 @@ Click the platform name to open.
 
 | Platform                                                                                      | Description                                                                                              |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [**Google Colab**](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H) | Run the full pipeline in a hosted notebook.<br> Installs the GitHub repo and allows interactive testing. |
+| [**Google Colab**](https://drive.google.com/file/d/13rWqKpAgJMytsztSt_spsws4HPWQZPnc/view?usp=sharing) | Run the full pipeline in a hosted notebook.<br> Installs the GitHub repo and allows interactive testing. |
 | [**HuggingFace Spaces**](https://huggingface.co/spaces/davidkim205/wallstreet-ai)             | Live web demo similar to Gradio UI for quick experimentation.                                            |
 
 ---
