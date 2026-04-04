@@ -15,7 +15,7 @@ Warren Buffett, Charlie Munger 등 전설적인 투자자들의 철학을 반영
 
 [![deepwiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkim205/wallstreet-ai)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/davidkim205/wallstreet-ai/edit/main/README.md)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/13rWqKpAgJMytsztSt_spsws4HPWQZPnc)
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/davidkim205/wallstreet-ai)
 
 <p align="center">
