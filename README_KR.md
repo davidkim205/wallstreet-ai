@@ -15,7 +15,7 @@ Warren Buffett, Charlie Munger 등 전설적인 투자자들의 철학을 반영
 
 [![deepwiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/davidkim205/wallstreet-ai)
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://github.com/davidkim205/wallstreet-ai/edit/main/README.md)
 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/davidkim205/wallstreet-ai)
 
 <p align="center">
@@ -131,7 +131,7 @@ CLI만 사용할 경우 5a 단계는 건너뛰고 `python pipeline.py`만 실행
 
 | 플랫폼 | 설명 |
 |---|---|
-| [**Google Colab**](https://colab.research.google.com/drive/1GUbw0Ef0bJQfkddrDNCuvADXG3ujxo9H) | 호스팅된 노트북 환경에서 전체 파이프라인을 실행합니다.<br>GitHub 저장소를 설치하고 직접 테스트할 수 있습니다. |
+| [**Google Colab**](https://github.com/davidkim205/wallstreet-ai/edit/main/README.md) | 호스팅된 노트북 환경에서 전체 파이프라인을 실행합니다.<br>GitHub 저장소를 설치하고 직접 테스트할 수 있습니다. |
 | [**HuggingFace Spaces**](https://huggingface.co/spaces/davidkim205/wallstreet-ai) | Gradio 기반의 라이브 웹 데모로, 빠르게 기능을 체험할 수 있습니다. |
 
 ---
