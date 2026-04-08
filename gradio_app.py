@@ -29,7 +29,7 @@ APP_LOGO_PATH = APP_ROOT / "docs" / "assets" / "logo.png"
 
 README_LINKS = {
     "deepwiki": "https://deepwiki.com/davidkim205/wallstreet-ai",
-    "colab": "https://drive.google.com/file/d/13rWqKpAgJMytsztSt_spsws4HPWQZPnc/view?usp=sharing",
+    "colab": "https://colab.research.google.com/drive/1rI3QXPLod5nUVVkg-EHqFpGhiCdA_d7m?usp=sharing",
     "github": "https://github.com/davidkim205/wallstreet-ai",
 }
 
